@@ -1,19 +1,18 @@
-# Safe Route — Guwahati Civic Pilot
+# Safe Route
 
-A functional demo of an evidence-aware navigation planner for the small route from **Guwahati Railway Station** to **Assam Downtown University**.
+A hackathon prototype for hazard-aware route recommendations. The frontend uses React, TypeScript, Leaflet, and React-Leaflet.
 
-## What is included
+## Routing flow
 
-- Three selectable route alternatives with distance, ETA, lighting, risk estimate, and evidence coverage.
-- A deterministic client-side route-risk engine that recalculates when hazard reports are added.
-- An interactive Leaflet map with public ArcGIS street tiles, route polylines, hazard markers, popups, and grid-cell overlays.
-- Interactive map controls, route overlays, evidence markers, spatial grid cells, and hazard detail inspection.
-- A report-a-hazard flow that immediately updates the active route assessment.
-- Demo navigation guidance, recent reports, and a methodology view explaining the score inputs.
+- Search an origin and destination with user-triggered OpenStreetMap Nominatim geocoding.
+- Select a matching place for each input; the app does not route unconfirmed or failed searches.
+- Request driving routes from the public OSRM Route API with alternatives and full GeoJSON geometry.
+- Compare the returned distances and estimated durations, select a route, and view it on the map.
+- Curated hazard reports remain local demo evidence and are not matched to returned routes or used in route ranking.
 
-The map geometry and infrastructure signals are curated demo data for this pilot route. Risk values are experimental estimates and are not emergency or guaranteed-safety guidance.
+The public Nominatim service is queried only after the user initiates a search. Requests are cached and serialized to at most one per second. It is a shared service with usage limits and is not intended for high-volume or autocomplete use. Route duration comes from OSRM and is not guaranteed to reflect live traffic.
 
-The map displays Esri street tiles with OpenStreetMap attribution for the independent demo; production deployments should review the selected tile provider's usage terms and quotas.
+The map uses Esri street tiles; review the tile provider's terms and quotas before production use. This prototype is not for emergency navigation.
 
 ## Run locally
 
@@ -35,7 +34,7 @@ npm run preview
 
 The repository includes a GitHub Actions workflow that builds and publishes the Vite output to GitHub Pages whenever `main` is updated. In the repository settings, set **Pages → Source** to **GitHub Actions**.
 
-## Demo route
+## Providers
 
-**Origin:** Guwahati Railway Station  
-**Destination:** Assam Downtown University
+- Geocoding: [Nominatim](https://nominatim.openstreetmap.org/) and [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)
+- Driving routes: [OSRM Route API](https://project-osrm.org/docs/v26.5.0/http#route-service)
