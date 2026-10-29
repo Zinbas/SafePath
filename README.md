@@ -18,10 +18,39 @@ The public Nominatim service is queried only after the user initiates a search. 
 
 The map uses Esri street tiles; review the tile provider's terms and quotas before production use. This prototype is not for emergency navigation.
 
+## Hazard ingestion prototype
+
+`services/hazard-ingestion` is a server-side library for discovering road-incident news with GDELT DOC 2.0, validating and normalizing reports, and deduplicating results. GDELT is a news index, not an official traffic feed. Imported reports are always unverified evidence; the service never invents coordinates, scores routes, or stores data.
+
+The local Reports page fetches external evidence through the Node API. Text-only or ambiguous locations are not plotted, and imported reports do not affect OSRM route recommendations. Reports are not persisted or verified by this prototype.
+
+GitHub Pages hosts only the static frontend and cannot run this Node API. Deploy the API separately and configure a production API URL/proxy before enabling external evidence there.
+
+Run the mocked unit tests and typecheck:
+
+```bash
+npm run test:ingest
+npm run typecheck:ingest
+```
+
+An opt-in live GDELT request is available for local smoke testing only. It makes one bounded request for at most five records and is not run in CI:
+
+```bash
+npm run smoke:gdelt
+```
+
 ## Run locally
+
+Start the hazard API in one terminal:
 
 ```bash
 npm install
+npm run dev:api
+```
+
+Start the frontend in a second terminal:
+
+```bash
 npm run dev
 ```
 
