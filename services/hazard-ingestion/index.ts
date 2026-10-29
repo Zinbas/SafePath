@@ -1,0 +1,10 @@
+export * from './types.ts';
+export { DEFAULT_CONFIG, loadConfig } from './config.ts';
+export { SourceError } from './sourceAdapter.ts';
+export type { SourceAdapter, AdapterContext, AdapterFetchResult, FetchLike, SourceErrorCode } from './sourceAdapter.ts';
+export { normalizeIncident, classifyCategory } from './normalizeIncident.ts';
+export { deduplicateIncidents } from './deduplicate.ts';
+export type { DedupeResult, DuplicateRecord } from './deduplicate.ts';
+export { ingestIncidents } from './ingestIncidents.ts';
+export type { IngestOptions, IngestionResult, SourceReport, RejectedReport } from './ingestIncidents.ts';
+export { createGdeltAdapter, buildGdeltUrl, GDELT_SOURCE_ID } from './adapters/gdeltAdapter.ts';
