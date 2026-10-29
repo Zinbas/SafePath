@@ -32,26 +32,18 @@ import { CircleMarker, MapContainer, Popup, Polyline, TileLayer, useMap } from '
 import type { LatLngExpression } from 'leaflet';
 import { fetchRoadRoutes, geocodeAddress } from './services/routing';
 import type { LocationCandidate } from './services/routing';
+import {
+  DuplicateHazardIdError,
+  HazardValidationError,
+  SEVERITY_LABELS,
+  createHazardService,
+  DEMO_HAZARDS,
+} from './hazards';
+import type { Hazard, HazardType, Severity } from './hazards';
 import 'leaflet/dist/leaflet.css';
 import './styles.css';
 
-type Point = { x: number; y: number };
 type Tab = 'planner' | 'reports' | 'methodology';
-type HazardType = 'Road obstruction' | 'Low lighting' | 'Flooding' | 'Traffic incident';
-type Verification = 'Verified' | 'Reported' | 'Needs review';
-
-type Hazard = {
-  id: string;
-  type: HazardType;
-  title: string;
-  location: string;
-  point: Point;
-  severity: 'High' | 'Medium' | 'Low';
-  verification: Verification;
-  freshness: string;
-  source: string;
-  summary: string;
-};
 
 type Route = {
   id: string;
@@ -68,8 +60,60 @@ const originName = 'Guwahati Railway Station';
 const destinationName = 'Assam Downtown University';
 const guwahatiCenter: LatLngExpression = [26.158, 91.805];
 
-function pointToLatLng(point: Point): [number, number] {
-  return [26.205 - (point.y / 70) * 0.105, 91.73 + (point.x / 100) * 0.16];
+const CORRIDOR_PRESETS: Record<string, { label: string; latitude: number; longitude: number }> = {
+  'AT Road': { label: 'AT Road corridor (approximate)', latitude: 26.1465, longitude: 91.7988 },
+  'GS Road': { label: 'GS Road / Zoo Tiniali (approximate)', latitude: 26.1555, longitude: 91.8276 },
+  'Panbazar': { label: 'Panbazar approach (approximate)', latitude: 26.1525, longitude: 91.8084 },
+};
+
+const hazardService = createHazardService();
+
+let seedPromise: Promise<void> | null = null;
+async function ensureDemoSeeded(): Promise<void> {
+  if (!seedPromise) {
+    seedPromise = (async () => {
+      for (const demo of DEMO_HAZARDS) {
+        try {
+          await hazardService.ingestHazard(demo);
+        } catch (error) {
+          if (error instanceof DuplicateHazardIdError) {
+            // Already seeded (e.g. React StrictMode or multiple mounts), safe to ignore
+          } else {
+            console.error('Failed to seed demo hazard:', error);
+          }
+        }
+      }
+    })();
+  }
+  return seedPromise;
+}
+
+function formatFreshness(reportedAt: string): string {
+  const diffMs = Math.max(0, Date.now() - new Date(reportedAt).getTime());
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} d ago`;
+}
+
+function getDisplayVerification(hazard: Hazard): 'Verified' | 'Needs review' {
+  return hazard.verificationStatus === 'verified' ? 'Verified' : 'Needs review';
+}
+
+function getDisplaySource(hazard: Hazard): string {
+  if (hazard.source === 'demo') {
+    if (hazard.id === 'h-culvert') return 'GMC field notice · Ward 17 (demo)';
+    if (hazard.id === 'h-lights') return 'Community report · 2 corroborating signals (demo)';
+    if (hazard.id === 'h-market') return 'Demo traffic bulletin · 13:05 IST';
+    return 'Demo data · simulated';
+  }
+  if (hazard.source === 'community') return 'Community report · submitted in demo';
+  if (hazard.source === 'official') return 'Official field notice';
+  if (hazard.source === 'news') return 'News report';
+  return hazard.source;
 }
 
 function LeafletViewport({ mapZoom, recenterKey, route, waypoints }: { mapZoom: number; recenterKey: number; route: Route | null; waypoints: [number, number][] }) {
@@ -84,45 +128,6 @@ function LeafletViewport({ mapZoom, recenterKey, route, waypoints }: { mapZoom: 
   }, [map, recenterKey, route]);
   return null;
 }
-
-const initialHazards: Hazard[] = [
-  {
-    id: 'h-culvert',
-    type: 'Road obstruction',
-    title: 'Open drainage work',
-    location: 'AT Road, near Bharalumukh junction',
-    point: { x: 34, y: 43 },
-    severity: 'Medium',
-    verification: 'Verified',
-    freshness: '18 min ago',
-    source: 'GMC field notice · Ward 17',
-    summary: 'A temporary pedestrian diversion is active beside an uncovered culvert. Vehicle lanes remain open.',
-  },
-  {
-    id: 'h-lights',
-    type: 'Low lighting',
-    title: 'Low-light segment',
-    location: 'Zoo Road service lane',
-    point: { x: 57, y: 35 },
-    severity: 'Low',
-    verification: 'Reported',
-    freshness: '46 min ago',
-    source: 'Community report · 2 corroborating signals',
-    summary: 'Mapped lighting coverage is sparse across a 420 m service-lane segment. This is an evidence gap, not proof of unsafe conditions.',
-  },
-  {
-    id: 'h-market',
-    type: 'Traffic incident',
-    title: 'Market-hour traffic slowdown',
-    location: 'Panbazar flyover approach',
-    point: { x: 48, y: 34 },
-    severity: 'Medium',
-    verification: 'Reported',
-    freshness: '1 hr ago',
-    source: 'Demo traffic bulletin · 13:05 IST',
-    summary: 'An estimated 8–12 minute delay is reported near the flyover approach. This curated marker does not affect road routing.',
-  },
-];
 
 function formatDistance(distanceMeters: number) {
   return distanceMeters >= 1000 ? `${(distanceMeters / 1000).toFixed(1)} km` : `${Math.round(distanceMeters)} m`;
@@ -149,8 +154,21 @@ function App() {
   const [routeState, setRouteState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [routeError, setRouteError] = useState('');
   const [inputError, setInputError] = useState('');
-  const [hazards, setHazards] = useState(initialHazards);
+  const [hazards, setHazards] = useState<Hazard[]>([]);
   const [selectedHazardId, setSelectedHazardId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    void ensureDemoSeeded().then(async () => {
+      const list = await hazardService.getAllHazards();
+      if (isMounted) {
+        setHazards(list);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   const [showReport, setShowReport] = useState(false);
   const [toast, setToast] = useState('');
   const [mapZoom, setMapZoom] = useState(1);
@@ -301,36 +319,44 @@ function App() {
     clearRoutes();
   };
 
-  const submitHazard = (event: React.FormEvent<HTMLFormElement>) => {
+  const submitHazard = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const type = String(form.get('type') || 'Road obstruction') as HazardType;
     const locationKey = String(form.get('location') || 'AT Road');
-    const locationMap: Record<string, { label: string; point: Point }> = {
-      'AT Road': { label: 'AT Road corridor', point: { x: 43, y: 39 } },
-      'GS Road': { label: 'GS Road / Zoo Tiniali', point: { x: 61, y: 33 } },
-      'Panbazar': { label: 'Panbazar approach', point: { x: 49, y: 35 } },
-    };
-    const selectedLocation = locationMap[locationKey] ?? locationMap['AT Road'];
-    const severity = String(form.get('severity') || 'Medium') as Hazard['severity'];
-    const description = String(form.get('description') || 'User-submitted field report.');
-    const newHazard: Hazard = {
-      id: `report-${Date.now()}`,
-      type,
-      title: `${type} reported`,
-      location: selectedLocation.label,
-      point: selectedLocation.point,
-      severity,
-      verification: 'Needs review',
-      freshness: 'just now',
-      source: 'Community report · submitted in demo',
-      summary: description,
-    };
-    setHazards((current) => [...current, newHazard]);
-    setSelectedHazardId(newHazard.id);
-    setShowReport(false);
-    notify('Report added to the local demo report list. It does not change road routing.');
-    event.currentTarget.reset();
+    const selectedLocation = CORRIDOR_PRESETS[locationKey] ?? CORRIDOR_PRESETS['AT Road'];
+    const rawSeverity = String(form.get('severity') || 'Medium');
+    const severityMap: Record<string, Severity> = { Low: 1, Medium: 2, High: 3 };
+    const severity = severityMap[rawSeverity] ?? 2;
+    const description = String(form.get('description') || '').trim();
+
+    try {
+      const created = await hazardService.submitCommunityHazard({
+        type,
+        title: `${type} reported`,
+        locationLabel: selectedLocation.label,
+        description,
+        latitude: selectedLocation.latitude,
+        longitude: selectedLocation.longitude,
+        severity,
+      });
+      const updatedList = await hazardService.getAllHazards();
+      setHazards(updatedList);
+      setSelectedHazardId(created.id);
+      setShowReport(false);
+      notify('Report added to the local demo report list. It does not change road routing.');
+      formElement.reset();
+    } catch (error) {
+      if (error instanceof HazardValidationError) {
+        const messages = error.issues.map((issue) => `${issue.field}: ${issue.message}`).join(', ');
+        notify(`Submission invalid: ${messages}`);
+      } else if (error instanceof Error) {
+        notify(`Error: ${error.message}`);
+      } else {
+        notify('Unable to submit hazard report.');
+      }
+    }
   };
 
   return (
@@ -429,7 +455,7 @@ function App() {
                     <CircleMarker center={[snappedWaypoints[0][1], snappedWaypoints[0][0]]} radius={10} pathOptions={{ color: '#15803d', fillColor: '#ffffff', fillOpacity: 1, weight: 4 }}><Popup><strong>Origin</strong><br />{originSelection?.displayName}</Popup></CircleMarker>
                     <CircleMarker center={[snappedWaypoints[snappedWaypoints.length - 1][1], snappedWaypoints[snappedWaypoints.length - 1][0]]} radius={10} pathOptions={{ color: '#dc2626', fillColor: '#ffffff', fillOpacity: 1, weight: 4 }}><Popup><strong>Destination</strong><br />{destinationSelection?.displayName}</Popup></CircleMarker>
                   </>}
-                  {mapLayers.evidence && showGuwahatiHazards && hazards.map((hazard) => <CircleMarker key={hazard.id} center={pointToLatLng(hazard.point)} radius={selectedHazardId === hazard.id ? 10 : 8} pathOptions={{ color: '#ffffff', fillColor: hazard.severity === 'High' ? '#dc2626' : '#d97706', fillOpacity: 1, weight: 2 }} eventHandlers={{ click: () => setSelectedHazardId(hazard.id) }}><Popup><strong>{hazard.title}</strong><br />{hazard.location}<br /><button className="map-popup-button" onClick={() => setSelectedHazardId(hazard.id)}>Inspect evidence</button></Popup></CircleMarker>)}
+                  {mapLayers.evidence && showGuwahatiHazards && hazards.map((hazard) => <CircleMarker key={hazard.id} center={[hazard.latitude, hazard.longitude]} radius={selectedHazardId === hazard.id ? 10 : 8} pathOptions={{ color: '#ffffff', fillColor: hazard.severity === 3 ? '#dc2626' : '#d97706', fillOpacity: 1, weight: 2 }} eventHandlers={{ click: () => setSelectedHazardId(hazard.id) }}><Popup><strong>{hazard.title ?? hazard.type}</strong><br />{hazard.locationLabel ?? 'Guwahati'}<br /><button className="map-popup-button" onClick={() => setSelectedHazardId(hazard.id)}>Inspect evidence</button></Popup></CircleMarker>)}
                 </MapContainer>
                 <div className="map-legend"><div><span className="legend-line green-line" /> selected route</div><div><span className="legend-line amber-line" /> alternative route</div><div><span className="legend-dot red-dot" /> route endpoints</div><div><span className="legend-dot" /> curated demo hazard</div></div>
                 <div className="map-attribution">Roads by OSRM · ETAs are estimates, not live traffic predictions</div>
@@ -453,11 +479,30 @@ function App() {
 }
 
 function HazardDrawer({ hazard, onClose }: { hazard: Hazard; onClose: () => void }) {
-  return <aside className="hazard-drawer"><div className="drawer-top"><div className="heading-with-icon"><span className={`icon-box ${hazard.severity === 'High' ? 'red' : 'amber'}`}><AlertTriangle size={17} /></span><div><div className="eyebrow">Demo evidence detail</div><h2>{hazard.title}</h2></div></div><button className="icon-button" onClick={onClose}><X size={16} /></button></div><div className="drawer-status-row"><span className={`status-label ${hazard.verification === 'Verified' ? 'good' : hazard.verification === 'Reported' ? 'warn' : 'neutral'}`}>{hazard.verification}</span><span className="freshness-label"><Clock3 size={13} /> {hazard.freshness}</span></div><div className="drawer-grid"><div><span className="metric-label">Location</span><strong>{hazard.location}</strong></div><div><span className="metric-label">Severity</span><strong className={hazard.severity === 'High' ? 'red-text' : 'amber-text'}>{hazard.severity}</strong></div><div><span className="metric-label">Source</span><strong>{hazard.source}</strong></div></div><p className="drawer-summary">{hazard.summary}</p><div className="uncertainty-box"><Info size={15} /><span>Curated demo evidence shown for Guwahati only. It is not matched to the returned OSRM road geometry.</span></div><div className="button-row"><button className="text-button" onClick={onClose}>Close <X size={13} /></button></div></aside>;
+  const severityLabel = SEVERITY_LABELS[hazard.severity];
+  const verificationLabel = getDisplayVerification(hazard);
+  const freshnessLabel = formatFreshness(hazard.reportedAt);
+  const sourceLabel = getDisplaySource(hazard);
+  const locationLabel = hazard.locationLabel ?? 'Guwahati corridor';
+  const title = hazard.title ?? `${hazard.type} reported`;
+
+  return <aside className="hazard-drawer"><div className="drawer-top"><div className="heading-with-icon"><span className={`icon-box ${hazard.severity === 3 ? 'red' : 'amber'}`}><AlertTriangle size={17} /></span><div><div className="eyebrow">Demo evidence detail</div><h2>{title}</h2></div></div><button className="icon-button" onClick={onClose}><X size={16} /></button></div><div className="drawer-status-row"><span className={`status-label ${verificationLabel === 'Verified' ? 'good' : 'neutral'}`}>{verificationLabel}</span><span className="freshness-label"><Clock3 size={13} /> {freshnessLabel}</span></div><div className="drawer-grid"><div><span className="metric-label">Location</span><strong>{locationLabel}</strong></div><div><span className="metric-label">Severity</span><strong className={hazard.severity === 3 ? 'red-text' : 'amber-text'}>{severityLabel}</strong></div><div><span className="metric-label">Source</span><strong>{sourceLabel}</strong></div></div><p className="drawer-summary">{hazard.description}</p><div className="uncertainty-box"><Info size={15} /><span>Curated demo evidence shown for Guwahati only. It is not matched to the returned OSRM road geometry.</span></div><div className="button-row"><button className="text-button" onClick={onClose}>Close <X size={13} /></button></div></aside>;
 }
 
 function ReportsView({ hazards, onSelect, onReport }: { hazards: Hazard[]; onSelect: (id: string) => void; onReport: () => void }) {
-  return <div className="content-page"><div className="content-page-header"><div><div className="eyebrow">Evidence ledger · Guwahati pilot</div><h1>Recent hazard reports</h1><p>Reports show their source, freshness, and verification state; they are not used in road routing yet.</p></div><button className="primary-button" onClick={onReport}><Plus size={16} /> Report a hazard</button></div><div className="report-summary-strip"><div><strong>{hazards.length}</strong><span>tracked items</span></div><div><strong>{hazards.filter((hazard) => hazard.verification === 'Verified').length}</strong><span>verified signals</span></div><div><strong>{hazards.filter((hazard) => hazard.verification === 'Needs review').length}</strong><span>needs review</span></div><div><strong>Demo</strong><span>local session only</span></div></div><div className="report-list">{hazards.map((hazard) => <button className="report-row" key={hazard.id} onClick={() => onSelect(hazard.id)}><div className={`report-icon ${hazard.severity.toLowerCase()}`}><AlertTriangle size={17} /></div><div className="report-main"><div className="report-title-row"><h2>{hazard.title}</h2><span className={`status-label ${hazard.verification === 'Verified' ? 'good' : hazard.verification === 'Reported' ? 'warn' : 'neutral'}`}>{hazard.verification}</span></div><p>{hazard.summary}</p><div className="report-meta"><span><MapPin size={13} /> {hazard.location}</span><span><Clock3 size={13} /> {hazard.freshness}</span><span><FileText size={13} /> {hazard.source}</span></div></div><div className="report-impact"><span className="metric-label">Evidence</span><strong>{hazard.severity}</strong><ArrowRight size={15} /></div></button>)}</div></div>;
+  const verifiedCount = hazards.filter((h) => h.verificationStatus === 'verified').length;
+  const needsReviewCount = hazards.filter((h) => h.verificationStatus === 'unverified').length;
+
+  return <div className="content-page"><div className="content-page-header"><div><div className="eyebrow">Evidence ledger · Guwahati pilot</div><h1>Recent hazard reports</h1><p>Reports show their source, freshness, and verification state; they are not used in road routing yet.</p></div><button className="primary-button" onClick={onReport}><Plus size={16} /> Report a hazard</button></div><div className="report-summary-strip"><div><strong>{hazards.length}</strong><span>tracked items</span></div><div><strong>{verifiedCount}</strong><span>verified signals</span></div><div><strong>{needsReviewCount}</strong><span>needs review</span></div><div><strong>Demo</strong><span>local session only</span></div></div><div className="report-list">{hazards.map((hazard) => {
+    const severityLabel = SEVERITY_LABELS[hazard.severity];
+    const verificationLabel = getDisplayVerification(hazard);
+    const freshnessLabel = formatFreshness(hazard.reportedAt);
+    const sourceLabel = getDisplaySource(hazard);
+    const locationLabel = hazard.locationLabel ?? 'Guwahati corridor';
+    const title = hazard.title ?? `${hazard.type} reported`;
+
+    return <button className="report-row" key={hazard.id} onClick={() => onSelect(hazard.id)}><div className={`report-icon ${severityLabel.toLowerCase()}`}><AlertTriangle size={17} /></div><div className="report-main"><div className="report-title-row"><h2>{title}</h2><span className={`status-label ${verificationLabel === 'Verified' ? 'good' : 'neutral'}`}>{verificationLabel}</span></div><p>{hazard.description}</p><div className="report-meta"><span><MapPin size={13} /> {locationLabel}</span><span><Clock3 size={13} /> {freshnessLabel}</span><span><FileText size={13} /> {sourceLabel}</span></div></div><div className="report-impact"><span className="metric-label">Evidence</span><strong>{severityLabel}</strong><ArrowRight size={15} /></div></button>;
+  })}</div></div>;
 }
 
 function MethodologyView() {
