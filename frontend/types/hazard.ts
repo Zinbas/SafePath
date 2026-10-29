@@ -21,6 +21,9 @@ export interface Hazard {
   title: string;
   location: string;
   point: MapPoint;
+  lat?: number;
+  lng?: number;
+  origin?: 'official' | 'news' | 'community' | 'demo';
   severity: HazardSeverity;
   verification: Verification;
   freshness: string;

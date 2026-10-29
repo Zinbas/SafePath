@@ -41,3 +41,4 @@ export class InMemoryHazardStore implements HazardStore {
     return { ok: true, count: this.records.size, backend: 'in-memory' };
   }
 }
+

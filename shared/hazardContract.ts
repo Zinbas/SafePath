@@ -67,3 +67,4 @@ export function bridgeLocationConfidence(
 export function isScoreable(confidence: LocationConfidence): boolean {
   return confidence === 'exact_verified' || confidence === 'exact_unverified' || confidence === 'geocoded_named';
 }
+

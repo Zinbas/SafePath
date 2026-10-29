@@ -9,7 +9,7 @@ export function adaptDemoHazards(hazards: Hazard[], includeGuwahatiData: boolean
   if (!includeGuwahatiData) return [];
 
   return hazards.map((hazard) => {
-    const [lat, lng] = demoPointToLatLng(hazard.point);
+    const [lat, lng] = (hazard.lat !== undefined && hazard.lng !== undefined) ? [hazard.lat, hazard.lng] : demoPointToLatLng(hazard.point);
     const type = hazard.type === 'Road closure'
       ? 'road_closure'
       : hazard.type === 'Road obstruction'
@@ -36,7 +36,7 @@ export function adaptDemoHazards(hazards: Hazard[], includeGuwahatiData: boolean
             : 2,
       description: hazard.summary,
       timestamp: hazard.reportedAtMs,
-      source: 'demo',
+      source: (hazard.origin ?? 'demo') as 'demo' | 'community' | 'official' | 'unknown',
       verification: hazard.verification === 'Verified' ? 'verified' : 'unverified',
     };
   });

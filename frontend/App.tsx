@@ -94,6 +94,8 @@ function App() {
   const [hazards, setHazards] = useState(initialDemoHazards);
   const [selectedHazardId, setSelectedHazardId] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
+  const [reportLocation, setReportLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [reportSaving, setReportSaving] = useState(false);
   const [showNavigation, setShowNavigation] = useState(false);
   const [toast, setToast] = useState('');
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -126,6 +128,48 @@ function App() {
   useEffect(() => () => {
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     if (searchDebounceTimer.current) window.clearTimeout(searchDebounceTimer.current);
+  }, []);
+
+  useEffect(() => {
+    const apiBase = (import.meta.env.VITE_API_BASE_URL as string) || '';
+    fetch(`${apiBase}/api/reports`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.reports) && data.reports.length > 0) {
+          const loaded: Hazard[] = data.reports.map((r: {
+            id: string;
+            lat: number;
+            lng: number;
+            category: string;
+            description: string;
+            severity: string;
+            createdAt: string;
+          }) => ({
+            id: r.id,
+            type: r.category as HazardType,
+            title: `${r.category} reported`,
+            location: `Map pin (${r.lat.toFixed(4)}, ${r.lng.toFixed(4)})`,
+            point: { x: 0, y: 0 },
+            lat: r.lat,
+            lng: r.lng,
+            origin: 'community' as const,
+            severity: (r.severity ?? 'Medium') as Hazard['severity'],
+            verification: 'Needs review' as const,
+            freshness: 'stored report',
+            source: 'Community report · stored',
+            summary: r.description,
+            reportedAtMs: new Date(r.createdAt).getTime(),
+          }));
+          setHazards((curr) => {
+            const existingIds = new Set(curr.map((h) => h.id));
+            const fresh = loaded.filter((h) => !existingIds.has(h.id));
+            return [...curr, ...fresh];
+          });
+        }
+      })
+      .catch(() => {
+        // API offline, ignore
+      });
   }, []);
 
   const clearRoutes = () => {
@@ -326,29 +370,53 @@ function App() {
     }
   };
 
-  const submitHazard = (event: React.FormEvent<HTMLFormElement>) => {
+  const submitHazard = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!reportLocation) {
+      notify('Click on the map first to set the hazard location.');
+      return;
+    }
     const form = new FormData(event.currentTarget);
     const type = String(form.get('type') || 'Road obstruction') as HazardType;
-    const locationKey = String(form.get('location') || 'AT Road');
-    const locationMap: Record<string, { label: string; point: MapPoint }> = {
-      'AT Road': { label: 'AT Road corridor', point: { x: 15.7, y: 13.3 } },
-      'GS Road': { label: 'GS Road / Zoo Tiniali', point: { x: 52.5, y: 30.7 } },
-      'Panbazar': { label: 'Panbazar approach', point: { x: 13.5, y: 17.3 } },
-      'Bhangagarh': { label: 'Guwahati-Shillong Road, Bhangagarh', point: { x: 43.8, y: 15.1 } },
-      'Christian Basti': { label: 'GS Road, Christian Basti', point: { x: 62.8, y: 16.4 } },
-      'Anil Nagar': { label: 'Anil Nagar connector road', point: { x: 36.9, y: 14.5 } },
-      'Six Mile': { label: 'GS Road, Six Mile junction', point: { x: 66.2, y: 15.7 } },
-    };
-    const selectedLocation = locationMap[locationKey] ?? locationMap['AT Road'];
     const severity = String(form.get('severity') || 'Medium') as Hazard['severity'];
     const description = String(form.get('description') || 'User-submitted field report.');
+
+    // Try to submit to backend API
+    setReportSaving(true);
+    try {
+      const apiBase = (import.meta.env.VITE_API_BASE_URL as string) || '';
+      const response = await fetch(`${apiBase}/api/reports`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lat: reportLocation.lat,
+          lng: reportLocation.lng,
+          category: type,
+          severity,
+          description,
+        }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error((body as Record<string, string>).error || `Server returned ${response.status}`);
+      }
+    } catch (err) {
+      // Backend unavailable — fall through to local-only demo insert
+      console.warn('Report API unavailable, adding locally:', err);
+    } finally {
+      setReportSaving(false);
+    }
+
+    // Always add to local state for immediate visibility
     const newHazard: Hazard = {
       id: `report-${Date.now()}`,
       type,
       title: `${type} reported`,
-      location: selectedLocation.label,
-      point: selectedLocation.point,
+      location: `Map pin (${reportLocation.lat.toFixed(4)}, ${reportLocation.lng.toFixed(4)})`,
+      point: { x: 0, y: 0 },
+      lat: reportLocation.lat,
+      lng: reportLocation.lng,
+      origin: 'community',
       severity,
       verification: 'Needs review',
       freshness: 'just now',
@@ -359,7 +427,8 @@ function App() {
     setHazards((current) => [...current, newHazard]);
     setSelectedHazardId(newHazard.id);
     setShowReport(false);
-    notify('Demo report added. Its approximate map position is included in this route estimate.');
+    setReportLocation(null);
+    notify('Report submitted. It will appear as an unverified community report.');
     event.currentTarget.reset();
   };
 
@@ -731,6 +800,7 @@ function App() {
                 showGuwahatiHazards={showGuwahatiHazards}
                 selectedHazardId={selectedHazardId}
                 onSelectHazard={(id) => setSelectedHazardId(id)}
+                onStartReport={(lat, lng) => { setReportLocation({ lat, lng }); setShowReport(true); }}
               />
 
               {selectedHazard && <HazardDrawer hazard={selectedHazard} onClose={() => setSelectedHazardId(null)} />}
@@ -756,7 +826,15 @@ function App() {
           onClose={() => setShowNavigation(false)}
         />
       )}
-      {showReport && <ReportModal onClose={() => setShowReport(false)} onSubmit={submitHazard} />}
+      {showReport && (
+        <ReportModal
+          onClose={() => { setShowReport(false); setReportLocation(null); }}
+          onSubmit={submitHazard}
+          reportLocation={reportLocation}
+          onSetLocation={setReportLocation}
+          reportSaving={reportSaving}
+        />
+      )}
       {toast && <div className="toast"><Check size={15} /> {toast}</div>}
     </div>
   );
@@ -877,12 +955,44 @@ function MethodologyView() {
   );
 }
 
-function ReportModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void }) {
+interface ReportModalProps {
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  reportLocation: { lat: number; lng: number } | null;
+  onSetLocation: (loc: { lat: number; lng: number } | null) => void;
+  reportSaving: boolean;
+}
+
+function ReportModal({ onClose, onSubmit, reportLocation, onSetLocation, reportSaving }: ReportModalProps) {
+  const [latInput, setLatInput] = useState(reportLocation ? String(reportLocation.lat) : '26.1820');
+  const [lngInput, setLngInput] = useState(reportLocation ? String(reportLocation.lng) : '91.7510');
+
+  useEffect(() => {
+    if (reportLocation) {
+      setLatInput(reportLocation.lat.toFixed(4));
+      setLngInput(reportLocation.lng.toFixed(4));
+    }
+  }, [reportLocation]);
+
+  const updateCoords = (latStr: string, lngStr: string) => {
+    setLatInput(latStr);
+    setLngInput(lngStr);
+    const lat = Number(latStr);
+    const lng = Number(lngStr);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && lat >= 25.9 && lat <= 26.4 && lng >= 91.45 && lng <= 92.2) {
+      onSetLocation({ lat, lng });
+    }
+  };
+
   return (
     <div className="modal-scrim">
       <div className="modal-card">
         <div className="modal-heading">
-          <div><div className="eyebrow">Community evidence · demo</div><h2>Report a hazard</h2><p>Local demo submissions affect prototype estimates using approximate map positions.</p></div>
+          <div>
+            <div className="eyebrow">Community evidence · live / demo</div>
+            <h2>Report a hazard</h2>
+            <p>Select coordinates on the map or enter them below to report road conditions.</p>
+          </div>
           <button className="icon-button" onClick={onClose}><X size={17} /></button>
         </div>
         <form onSubmit={onSubmit}>
@@ -905,25 +1015,64 @@ function ReportModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (ev
                 <option>Severe</option>
               </select>
             </label>
-            <label>Nearby corridor
-              <select name="location" defaultValue="AT Road">
-                <option>AT Road</option>
-                <option>GS Road</option>
-                <option>Panbazar</option>
-                <option>Bhangagarh</option>
-                <option>Christian Basti</option>
-                <option>Anil Nagar</option>
-                <option>Six Mile</option>
-              </select>
-            </label>
+            <div className="full-width" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <label>Latitude (25.90 - 26.40)
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={latInput}
+                  onChange={(e) => updateCoords(e.target.value, lngInput)}
+                  required
+                />
+              </label>
+              <label>Longitude (91.45 - 92.20)
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={lngInput}
+                  onChange={(e) => updateCoords(latInput, e.target.value)}
+                  required
+                />
+              </label>
+            </div>
+            <div className="full-width" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="secondary-button compact"
+                style={{ fontSize: '11px', padding: '4px 8px' }}
+                onClick={() => updateCoords('26.1821', '91.7507')}
+              >
+                Guwahati Station
+              </button>
+              <button
+                type="button"
+                className="secondary-button compact"
+                style={{ fontSize: '11px', padding: '4px 8px' }}
+                onClick={() => updateCoords('26.2017', '91.8623')}
+              >
+                ADTU Campus
+              </button>
+              <button
+                type="button"
+                className="secondary-button compact"
+                style={{ fontSize: '11px', padding: '4px 8px' }}
+                onClick={() => updateCoords('26.1620', '91.7825')}
+              >
+                Zoo Road
+              </button>
+            </div>
             <label className="full-width">What did you observe?
-              <textarea name="description" required minLength={10} placeholder="Describe the issue briefly, including what a traveller should look out for." />
+              <textarea name="description" required minLength={5} maxLength={500} placeholder="Describe the issue briefly (5-500 characters)." />
             </label>
           </div>
-          <div className="form-note"><Info size={14} /> Do not include personal information. This prototype stores the report only in the current demo session.</div>
+          <div className="form-note">
+            <Info size={14} /> Reports are stored on the local API server when available, or retained in session state. Never enter private details.
+          </div>
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
-            <button type="submit" className="primary-button"><Flag size={15} /> Submit report</button>
+            <button type="submit" className="primary-button" disabled={reportSaving}>
+              <Flag size={15} /> {reportSaving ? 'Saving…' : 'Submit report'}
+            </button>
           </div>
         </form>
       </div>

@@ -47,6 +47,7 @@ interface InteractiveMapProps {
   showGuwahatiHazards: boolean;
   selectedHazardId: string | null;
   onSelectHazard: (hazardId: string) => void;
+  onStartReport?: (lat: number, lng: number) => void;
 }
 
 // Custom Leaflet DivIcons with CSS pulsing beacons
@@ -153,6 +154,7 @@ export function InteractiveMap({
   showGuwahatiHazards,
   selectedHazardId,
   onSelectHazard,
+  onStartReport,
 }: InteractiveMapProps) {
   const [basemap, setBasemap] = useState<BasemapMode>(cartoApiKey ? 'positron' : 'streets');
   const [mapZoom, setMapZoom] = useState(1);
@@ -477,6 +479,18 @@ export function InteractiveMap({
                   >
                     Set as End
                   </button>
+                  {onStartReport && (
+                    <button
+                      type="button"
+                      className="secondary-button compact"
+                      onClick={() => {
+                        onStartReport(clickedLocation.lat, clickedLocation.lng);
+                        setClickedLocation(null);
+                      }}
+                    >
+                      Report Hazard
+                    </button>
+                  )}
                 </div>
               </div>
             </Popup>
@@ -517,7 +531,7 @@ export function InteractiveMap({
               return (
                 <Marker
                   key={hazard.id}
-                  position={demoPointToLatLng(hazard.point)}
+                  position={(hazard.lat !== undefined && hazard.lng !== undefined) ? [hazard.lat, hazard.lng] : demoPointToLatLng(hazard.point)}
                   icon={createHazardIcon(hazard.severity, isSelected)}
                   eventHandlers={{ click: () => onSelectHazard(hazard.id) }}
                 >

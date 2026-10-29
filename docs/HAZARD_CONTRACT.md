@@ -64,3 +64,4 @@ The spatial grid uses 0.01° cells (~1.1 km at equator). See [`shared/grid.ts`](
 
 The demo uses `InMemoryHazardStore`. A file-backed JSON store can be added
 for durable persistence without requiring a database.
+
