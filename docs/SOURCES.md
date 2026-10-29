@@ -57,3 +57,4 @@ During Phase 8, we evaluated whether unlocated news mentions (e.g. "traffic halt
 
 ### Architectural Implication
 Because no official machine-readable feed exists for real-time urban hazards in Guwahati, SafePath explicitly classifies all municipal-style records in demo mode as `[SIMULATED]`. It never fabricates "GMC Verified" status for synthetic records.
+

@@ -90,3 +90,4 @@ describe('incidentToHazardInput adapter & scoring rules', () => {
     assert.equal(adapted[0].id, 'valid');
   });
 });
+

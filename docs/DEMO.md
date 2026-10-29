@@ -57,3 +57,4 @@ Open `http://localhost:5173` in your browser.
 2. Refresh the page or click a location.
 3. The application displays an informative banner: *"Live data service is not reachable. Operating in local demo mode."*
 4. All map viewing, OSRM routing, risk assessment, and local community reporting continue to work without a fatal crash.
+

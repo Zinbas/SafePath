@@ -796,7 +796,7 @@ function App() {
                 originSelection={originSelection}
                 destinationSelection={destinationSelection}
                 onSelectLocation={selectLocation}
-                hazards={routeDemoHazards}
+                hazards={hazards}
                 showGuwahatiHazards={showGuwahatiHazards}
                 selectedHazardId={selectedHazardId}
                 onSelectHazard={(id) => setSelectedHazardId(id)}

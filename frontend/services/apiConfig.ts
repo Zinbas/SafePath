@@ -30,3 +30,4 @@ export function getApiBaseUrl(): string {
 
   return cleanUrl;
 }
+

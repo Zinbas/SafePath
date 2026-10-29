@@ -116,28 +116,32 @@ function MapClickHandler({
   return null;
 }
 
-const cartoApiKey = import.meta.env.VITE_CARTO_API_KEY?.trim() ?? '';
+const osmUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const osmAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
+const cartoVoyagerUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+const cartoDarkUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 const cartoAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>';
-const esriStreetUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
-const cartoTileUrl = (style: string) => `https://basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cartoApiKey)}`;
+
+const satelliteUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const satelliteAttribution = 'Tiles &copy; Esri &middot; Maxar, Earthstar Geographics';
 
 const BASEMAP_TILES: Record<BasemapMode, { url: string; attribution: string }> = {
-  positron: {
-    // CARTO requires a key for raster tiles; retain a working map when local setup is pending.
-    url: cartoApiKey ? cartoTileUrl('rastertiles/voyager') : esriStreetUrl,
-    attribution: cartoApiKey ? cartoAttribution : 'Tiles &copy; Esri &middot; OpenStreetMap contributors',
-  },
   streets: {
-    url: esriStreetUrl,
-    attribution: 'Tiles &copy; Esri &middot; OpenStreetMap contributors',
+    url: osmUrl,
+    attribution: osmAttribution,
+  },
+  positron: {
+    url: cartoVoyagerUrl,
+    attribution: cartoAttribution,
   },
   satellite: {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles &copy; Esri &middot; Maxar, Earthstar Geographics',
+    url: satelliteUrl,
+    attribution: satelliteAttribution,
   },
   dark: {
-    url: cartoApiKey ? cartoTileUrl('dark_all') : esriStreetUrl,
-    attribution: cartoApiKey ? cartoAttribution : 'Tiles &copy; Esri &middot; OpenStreetMap contributors',
+    url: cartoDarkUrl,
+    attribution: cartoAttribution,
   },
 };
 
@@ -156,7 +160,7 @@ export function InteractiveMap({
   onSelectHazard,
   onStartReport,
 }: InteractiveMapProps) {
-  const [basemap, setBasemap] = useState<BasemapMode>(cartoApiKey ? 'positron' : 'streets');
+  const [basemap, setBasemap] = useState<BasemapMode>('streets');
   const [mapZoom, setMapZoom] = useState(1);
   const [recenterKey, setRecenterKey] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -228,8 +232,8 @@ export function InteractiveMap({
               type="button"
               className={`map-layer-pill ${basemap === 'positron' ? 'active' : ''}`}
               onClick={() => setBasemap('positron')}
-              title={cartoApiKey ? 'Clean CARTO basemap' : 'Set VITE_CARTO_API_KEY to enable the CARTO basemap'}
-              disabled={!cartoApiKey}
+              title="Clean CARTO Voyager basemap"
+              
             >
               Clean
             </button>
@@ -253,8 +257,8 @@ export function InteractiveMap({
               type="button"
               className={`map-layer-pill ${basemap === 'dark' ? 'active' : ''}`}
               onClick={() => setBasemap('dark')}
-              title={cartoApiKey ? 'High Contrast Night Mode' : 'Set VITE_CARTO_API_KEY to enable the CARTO night basemap'}
-              disabled={!cartoApiKey}
+              title="High Contrast Night Mode"
+              
             >
               Night
             </button>
@@ -525,7 +529,6 @@ export function InteractiveMap({
           {/* Hazard Pins with Custom Badges */}
           {showHazards &&
             showGuwahatiHazards &&
-            activeRoute &&
             hazards.map((hazard) => {
               const isSelected = selectedHazardId === hazard.id;
               return (

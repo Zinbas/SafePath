@@ -93,3 +93,4 @@ CMD ["npx", "tsx", "services/hazard-ingestion/server.ts"]
 - [x] **HTTPS Enforcement**: `getApiBaseUrl()` alerts in production when connecting over unencrypted HTTP.
 - [x] **Resilient Polling**: `useLiveIncidents` pauses when browser tab is hidden and uses exponential backoff (60s -> 120s -> 240s) on connection failures.
 - [x] **Graceful Degradation**: If the backend API is unreachable, the frontend automatically falls back to local session-only demo mode with clear UI warnings.
+
