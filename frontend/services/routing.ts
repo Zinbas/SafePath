@@ -115,12 +115,12 @@ function waitForNominatimSlot(signal?: AbortSignal) {
   if (delay === 0) return Promise.resolve();
 
   return new Promise<void>((resolve, reject) => {
-    const timer = window.setTimeout(() => {
+    const timer = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
       resolve();
     }, delay);
     const onAbort = () => {
-      window.clearTimeout(timer);
+      clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
       reject(abortError());
     };
@@ -227,7 +227,7 @@ export async function fetchRoadRoutes(
   const abortRequest = () => requestController.abort();
   if (signal.aborted) requestController.abort();
   else signal.addEventListener('abort', abortRequest, { once: true });
-  const timeout = window.setTimeout(() => {
+  const timeout = setTimeout(() => {
     timedOut = true;
     requestController.abort();
   }, 15_000);
@@ -243,7 +243,7 @@ export async function fetchRoadRoutes(
     if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) throw abortError();
     throw new Error('Unable to reach OSRM. Check your connection and try again.');
   } finally {
-    window.clearTimeout(timeout);
+    clearTimeout(timeout);
     signal.removeEventListener('abort', abortRequest);
   }
   if (!isRecord(data)) {

@@ -1,3 +1,4 @@
+import { getApiBaseUrl } from './apiConfig';
 export type ExternalIncident = {
   id: string;
   description: string;
@@ -6,6 +7,8 @@ export type ExternalIncident = {
   sourceUrl: string;
   sourceName: string;
   locationText: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   locationConfidence: string;
   isStale: boolean;
   qualityFlags: string[];
@@ -26,7 +29,7 @@ export type IngestionResult = {
 export async function fetchExternalIncidents(signal: AbortSignal): Promise<IngestionResult> {
   let response: Response;
   try {
-    response = await fetch('/api/incidents', { headers: { Accept: 'application/json' }, signal });
+    response = await fetch(`${getApiBaseUrl()}/api/incidents`, { headers: { Accept: 'application/json' }, signal });
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw new Error('Unable to reach the hazard ingestion API. Start the local API server and try again.');

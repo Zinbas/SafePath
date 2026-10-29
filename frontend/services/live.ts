@@ -1,3 +1,4 @@
+import { getApiBaseUrl } from './apiConfig';
 export type LiveWeather = {
   temperatureC: number | null;
   precipitationMm: number | null;
@@ -20,7 +21,7 @@ export async function fetchLiveWeather(latitude: number, longitude: number, sign
   const parameters = new URLSearchParams({ lat: latitude.toFixed(4), lon: longitude.toFixed(4) });
   let response: Response;
   try {
-    response = await fetch(`/api/weather?${parameters}`, { headers: { Accept: 'application/json' }, signal });
+    response = await fetch(`${getApiBaseUrl()}/api/weather?${parameters}`, { headers: { Accept: 'application/json' }, signal });
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw new Error('Unable to reach the live weather API.');
