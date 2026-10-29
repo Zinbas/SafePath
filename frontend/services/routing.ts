@@ -19,7 +19,66 @@ export type RouteSearchResult = {
 
 type JsonRecord = Record<string, unknown>;
 
+export const GUWAHATI_PRESETS: LocationCandidate[] = [
+  {
+    id: 'preset-station',
+    displayName: 'Guwahati Railway Station, Ambari',
+    longitude: 91.7507423,
+    latitude: 26.1821371,
+  },
+  {
+    id: 'preset-adtu',
+    displayName: 'Assam Down Town University, Panikhaiti',
+    longitude: 91.8622787,
+    latitude: 26.2017061,
+  },
+  {
+    id: 'preset-airport',
+    displayName: 'LGBI Airport (GAU), Borjhar',
+    longitude: 91.5859,
+    latitude: 26.1061,
+  },
+  {
+    id: 'preset-kamakhya',
+    displayName: 'Kamakhya Temple, Nilachal Hill',
+    longitude: 91.7056,
+    latitude: 26.1664,
+  },
+  {
+    id: 'preset-iit',
+    displayName: 'IIT Guwahati, Amingaon',
+    longitude: 91.6916,
+    latitude: 26.1878,
+  },
+  {
+    id: 'preset-zoo',
+    displayName: 'Zoo Road / RG Baruah Road Tiniali',
+    longitude: 91.7825,
+    latitude: 26.1620,
+  },
+  {
+    id: 'preset-khanapara',
+    displayName: 'Khanapara Transit Hub, GS Road',
+    longitude: 91.8210,
+    latitude: 26.1180,
+  },
+  {
+    id: 'preset-paltan',
+    displayName: 'Paltan Bazar / ASTC Central Station',
+    longitude: 91.7485,
+    latitude: 26.1788,
+  },
+  {
+    id: 'preset-dispur',
+    displayName: 'Assam Secretariat, Dispur Capital Complex',
+    longitude: 91.7895,
+    latitude: 26.1432,
+  },
+];
+
 const locationCache = new Map<string, LocationCandidate[]>();
+const reverseLocationCache = new Map<string, LocationCandidate>();
+const REVERSE_CACHE_LIMIT = 60;
 let lastLocationRequestAt = 0;
 let locationRequestQueue: Promise<void> = Promise.resolve();
 
@@ -40,28 +99,49 @@ function abortError() {
   return new DOMException('The request was cancelled.', 'AbortError');
 }
 
-function waitForNominatimSlot(signal: AbortSignal) {
+function waitForNominatimSlot(signal?: AbortSignal) {
   const delay = Math.max(0, lastLocationRequestAt + 1000 - Date.now());
-  if (signal.aborted) return Promise.reject(abortError());
+  if (signal?.aborted) return Promise.reject(abortError());
   if (delay === 0) return Promise.resolve();
 
   return new Promise<void>((resolve, reject) => {
     const timer = window.setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
+      signal?.removeEventListener('abort', onAbort);
       resolve();
     }, delay);
     const onAbort = () => {
       window.clearTimeout(timer);
-      signal.removeEventListener('abort', onAbort);
+      signal?.removeEventListener('abort', onAbort);
       reject(abortError());
     };
-    signal.addEventListener('abort', onAbort, { once: true });
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
 export async function geocodeAddress(query: string, signal: AbortSignal): Promise<LocationCandidate[]> {
   const normalizedQuery = query.trim();
   if (!normalizedQuery) throw new Error('Enter a location before searching.');
+
+  const lower = normalizedQuery.toLowerCase();
+  // "ADTU" / "Down Town" are aliases for the campus preset; every other query is
+  // matched against preset names so a search like "Paltan Bazar station" still
+  // returns the Paltan Bazar preset instead of being forced to the railway station.
+  const adtuAlias = lower.includes('downtown') || lower.includes('down town') || lower.includes('adtu');
+  const words = lower.split(/\s+/).filter((word) => word.length > 2);
+  const matchedPresets = GUWAHATI_PRESETS
+    .map((preset, order) => {
+      if (adtuAlias) return preset.id === 'preset-adtu' ? { preset, score: 1, order } : null;
+      const presetName = preset.displayName.toLowerCase();
+      if (presetName.includes(lower)) return { preset, score: 1000 + lower.length, order };
+      const score = words.reduce((total, word) => (presetName.includes(word) ? total + word.length : total), 0);
+      return score > 0 ? { preset, score, order } : null;
+    })
+    .filter((match): match is { preset: LocationCandidate; score: number; order: number } => match !== null)
+    .sort((a, b) => b.score - a.score || a.order - b.order)
+    .map((match) => match.preset);
+  if (matchedPresets.length > 0) {
+    return matchedPresets;
+  }
 
   const cacheKey = normalizedQuery.toLocaleLowerCase();
   const cachedResults = locationCache.get(cacheKey);
@@ -75,7 +155,8 @@ export async function geocodeAddress(query: string, signal: AbortSignal): Promis
       q: normalizedQuery,
       format: 'jsonv2',
       addressdetails: '1',
-      limit: '5',
+      viewbox: '91.45,26.35,92.15,25.90',
+      limit: '6',
     });
     let response: Response;
     try {
@@ -130,17 +211,31 @@ export async function fetchRoadRoutes(
     overview: 'full',
   });
   let response: Response;
+  let data: unknown;
+  const requestController = new AbortController();
+  let timedOut = false;
+  const abortRequest = () => requestController.abort();
+  if (signal.aborted) requestController.abort();
+  else signal.addEventListener('abort', abortRequest, { once: true });
+  const timeout = window.setTimeout(() => {
+    timedOut = true;
+    requestController.abort();
+  }, 15_000);
+
   try {
     response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?${parameters}`, {
       headers: { Accept: 'application/json' },
-      signal,
+      signal: requestController.signal,
     });
+    data = await response.json().catch(() => null);
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw error;
+    if (timedOut) throw new Error('Road routing timed out after 15 seconds. Check your connection and try again.');
+    if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) throw abortError();
     throw new Error('Unable to reach OSRM. Check your connection and try again.');
+  } finally {
+    window.clearTimeout(timeout);
+    signal.removeEventListener('abort', abortRequest);
   }
-
-  const data: unknown = await response.json().catch(() => null);
   if (!isRecord(data)) {
     throw new Error(`Road routing failed (HTTP ${response.status}). Please try again.`);
   }
@@ -193,4 +288,54 @@ export async function fetchRoadRoutes(
   });
 
   return { routes, waypoints };
+}
+
+export async function reverseGeocodeLatLng(lat: number, lng: number, signal?: AbortSignal): Promise<LocationCandidate> {
+  const roundedLat = Math.round(lat * 10000) / 10000;
+  const roundedLng = Math.round(lng * 10000) / 10000;
+  // The clicked point stays the route endpoint: only its label is reverse geocoded.
+  const fallback: LocationCandidate = {
+    id: `pin-${roundedLat},${roundedLng}`,
+    displayName: `Map point (${roundedLat.toFixed(4)}, ${roundedLng.toFixed(4)})`,
+    longitude: roundedLng,
+    latitude: roundedLat,
+  };
+
+  const cacheKey = `${roundedLat},${roundedLng}`;
+  const cached = reverseLocationCache.get(cacheKey);
+  if (cached) return cached;
+
+  // Reverse lookups share the Nominatim queue so rapid map clicks cannot exceed
+  // the public service's one-request-per-second policy.
+  const request = locationRequestQueue.then(async () => {
+    await waitForNominatimSlot(signal);
+    lastLocationRequestAt = Date.now();
+
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${roundedLat}&lon=${roundedLng}&format=jsonv2`,
+      { headers: { Accept: 'application/json' }, referrerPolicy: 'strict-origin-when-cross-origin', signal },
+    );
+    if (!response.ok) return fallback;
+
+    const data: unknown = await response.json().catch(() => null);
+    if (!isRecord(data) || typeof data.display_name !== 'string') return fallback;
+
+    const shortName = data.display_name.split(',').map((part) => part.trim()).slice(0, 3).join(', ');
+    return shortName ? { ...fallback, displayName: shortName } : fallback;
+  });
+
+  locationRequestQueue = request.then(() => undefined, () => undefined);
+
+  try {
+    const candidate = await request;
+    if (reverseLocationCache.size >= REVERSE_CACHE_LIMIT) {
+      const oldestKey = reverseLocationCache.keys().next().value;
+      if (oldestKey !== undefined) reverseLocationCache.delete(oldestKey);
+    }
+    reverseLocationCache.set(cacheKey, candidate);
+    return candidate;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error;
+    return fallback;
+  }
 }

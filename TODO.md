@@ -16,6 +16,12 @@
 - [x] A submitted hazard immediately updates the active route score, warnings, evidence coverage, and map marker without a manual refresh.
 - [x] Reports and status labels distinguish reported, verified, stale, uncertain, and demo evidence.
 
+## Live internet data
+- [x] Latest Guwahati road-incident news is fetched from Google News RSS (with GDELT as a secondary source) through the local API and shown in the planner.
+- [x] The planner live-news card and the Reports evidence list refresh automatically every 60 seconds and show their last sync time.
+- [x] Current weather for the route origin is fetched live from Open-Meteo and shown on the map footer, refreshing every 10 minutes.
+- [x] Live headlines are clearly labelled unverified and never alter route scores, because they carry no coordinates.
+
 ## Civic Route Utility interface
 - [x] The interface follows the supplied civic utility direction: Inter typography, compact square controls, high contrast, forest green, amber, red, structural borders, and a split map/inspection layout.
 - [x] The safety disclaimer remains visible and explicitly avoids guaranteeing safety or complete incident detection.

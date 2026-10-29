@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
 import { AlertTriangle, ExternalLink, RefreshCw } from 'lucide-react';
-import { fetchExternalIncidents } from '../services/incidents';
-import type { IngestionResult } from '../services/incidents';
+import { useLiveIncidents } from '../hooks/useLiveIncidents';
+import { formatRelativeTime } from '../utils/format';
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -13,51 +12,30 @@ function formatLabel(value: string) {
 }
 
 export default function ExternalIncidents() {
-  const [result, setResult] = useState<IngestionResult | null>(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [requestNumber, setRequestNumber] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-
-    fetchExternalIncidents(controller.signal)
-      .then(setResult)
-      .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== 'AbortError') setError(requestError.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [requestNumber]);
-
-  const failedSources = result?.sources.filter((source) => source.status === 'failed') ?? [];
+  const { data, error, loading, updatedAt, refresh } = useLiveIncidents(60_000);
+  const failedSources = data?.sources.filter((source) => source.status === 'failed') ?? [];
 
   return <section className="external-incidents" aria-labelledby="external-incidents-heading">
     <div className="external-incidents-header">
       <div>
-        <div className="eyebrow">GDELT news index · external feed</div>
+        <div className="eyebrow">Live news index · external feed</div>
         <h2 id="external-incidents-heading">External incident evidence</h2>
-        <p>News mentions are unverified evidence, not confirmation of a current road hazard. They never affect route selection.</p>
+        <p>News mentions are unverified evidence, not confirmation of a current road hazard. They never affect route selection. This list refreshes automatically every minute.</p>
       </div>
-      <button className="icon-button" type="button" title="Refresh external evidence" aria-label="Refresh external evidence" onClick={() => setRequestNumber((number) => number + 1)} disabled={loading}>
+      <button className="icon-button" type="button" title="Refresh external evidence" aria-label="Refresh external evidence" onClick={refresh} disabled={loading}>
         <RefreshCw size={16} className={loading ? 'spin-icon' : undefined} />
       </button>
     </div>
 
-    {loading && <div className="routing-message" role="status">Loading external news evidence…</div>}
+    {loading && !data && <div className="routing-message" role="status">Loading external news evidence…</div>}
     {error && <div className="routing-message error-message" role="alert">{error}</div>}
-    {failedSources.length > 0 && <div className="routing-message error-message" role="status">
-      {failedSources.map((source) => `${source.sourceId}: ${source.errorMessage ?? 'source unavailable'}`).join(' · ')}
+    {failedSources.length > 0 && <div className="routing-message" role="status">
+      Some live sources are unavailable: {failedSources.map((source) => `${source.sourceId} (${source.errorMessage ?? 'source unavailable'})`).join(' · ')}. Other results are still current.
     </div>}
-    {!loading && !error && failedSources.length === 0 && result?.incidents.length === 0 && <div className="routing-message">No matching external reports were returned. This does not indicate that a road is clear.</div>}
+    {!loading && !error && failedSources.length === 0 && data?.incidents.length === 0 && <div className="routing-message">No matching external reports were returned. This does not indicate that a road is clear.</div>}
 
-    {result && result.incidents.length > 0 && <div className="external-incident-list">
-      {result.incidents.map((incident) => <article className="external-incident" key={incident.id}>
+    {data && data.incidents.length > 0 && <div className="external-incident-list">
+      {data.incidents.map((incident) => <article className="external-incident" key={incident.id}>
         <div className="external-incident-icon"><AlertTriangle size={16} /></div>
         <div className="external-incident-content">
           <div className="external-incident-title-row">
@@ -77,6 +55,9 @@ export default function ExternalIncidents() {
       </article>)}
     </div>}
 
-    {result && <div className="external-feed-footer">Retrieved {formatDate(result.retrievedAt)} · GDELT DOC 2.0 · no coordinates inferred</div>}
+    {data && <div className="external-feed-footer">
+      Retrieved {formatDate(data.retrievedAt)} · auto-refresh every 60 s
+      {updatedAt !== null && ` · last sync ${formatRelativeTime(updatedAt)}`} · no coordinates inferred
+    </div>}
   </section>;
 }

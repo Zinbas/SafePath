@@ -9,7 +9,8 @@ It does **not** score routes, match geometry, build grids, or store anything. Im
 | `types.ts` | Public contract (`NormalizedIncident`, `RawExternalReport`, config) |
 | `sourceAdapter.ts` | `SourceAdapter` interface, `SourceError` codes |
 | `httpClient.ts` | GET+JSON with hard timeout, 429/Retry-After, throttle-text detection |
-| `adapters/gdeltAdapter.ts` | GDELT DOC 2.0 ArtList adapter (news discovery only) |
+| `adapters/googleNewsAdapter.ts` | Google News RSS search adapter (primary live news source) |
+| `adapters/gdeltAdapter.ts` | GDELT DOC 2.0 ArtList adapter (secondary; frequently rate-limited) |
 | `normalizeIncident.ts` / `location.ts` / `url.ts` / `validation.ts` | Validation, category, text-only location, canonical URL + stable id |
 | `deduplicate.ts` / `ingestIncidents.ts` | De-dupe; orchestrator that isolates per-source failures |
 | `tests/` | `node:test` suites using clearly labelled SYNTHETIC fixtures |
@@ -26,6 +27,12 @@ Suggested `package.json` scripts (not applied, shared file): `"test:ingest": "no
 ## Environment (all optional; no secrets are needed by GDELT)
 `HAZARD_INGEST_STALE_HOURS` (default 48), `HAZARD_INGEST_TIMEOUT_MS` (default 10000) via `loadConfig(process.env)`.
 Run this service server-side only. Do not use `VITE_` variables for any future source credential.
+
+## Source behaviour
+
+- `ingestIncidents` runs every adapter in parallel and isolates failures per source. Normalization and de-duplication still run in adapter order, so "first occurrence wins" is deterministic.
+- The Google News adapter converts RFC-822 `pubDate` values to ISO-8601, strips the trailing ` - Publisher` suffix, and keeps only headlines naming Guwahati/Gauhati/Kamrup (`requiredTerms`).
+- `server.ts` exposes `GET /api/incidents` (2 min cache) and `GET /api/weather` (Open-Meteo current conditions, 10 min cache).
 
 ## Usage
 ```ts

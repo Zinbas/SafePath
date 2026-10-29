@@ -1,4 +1,4 @@
-import { scoreRouteRisk } from '../riskEngine';
+import { getHazardsNearRoute, scoreRouteRisk } from '../riskEngine';
 import type { HazardInput } from '../riskEngine';
 import type { Hazard } from '../types/hazard';
 import type { Route } from '../types/route';
@@ -16,9 +16,11 @@ export function adaptDemoHazards(hazards: Hazard[], includeGuwahatiData: boolean
         ? 'road_obstruction'
         : hazard.type === 'Low lighting'
           ? 'low_lighting'
-          : hazard.type === 'Flooding'
-            ? 'flooding'
-            : 'traffic_incident';
+          : hazard.type === 'Pothole'
+            ? 'pothole'
+            : hazard.type === 'Flooding'
+              ? 'flooding'
+              : 'traffic_incident';
 
     return {
       id: hazard.id,
@@ -38,6 +40,20 @@ export function adaptDemoHazards(hazards: Hazard[], includeGuwahatiData: boolean
       verification: hazard.verification === 'Verified' ? 'verified' : 'unverified',
     };
   });
+}
+
+/** Return demo records whose approximate positions fall within the active road corridor. */
+export function getHazardsAlongRoute(route: Route | null, hazards: Hazard[], includeGuwahatiData: boolean): Hazard[] {
+  if (!route || !includeGuwahatiData) return [];
+
+  const nearbyIds = new Set(getHazardsNearRoute({
+    id: route.id,
+    coordinates: route.coordinates.map(([lng, lat]) => ({ lat, lng })),
+    distanceM: route.distanceMeters,
+    durationS: route.durationSeconds,
+  }, adaptDemoHazards(hazards, true)).map(({ hazard }) => hazard.id));
+
+  return hazards.filter((hazard) => nearbyIds.has(hazard.id));
 }
 
 /** Convert OSRM route UI values and score each candidate against supplied hazards. */

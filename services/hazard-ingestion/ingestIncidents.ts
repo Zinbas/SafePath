@@ -42,7 +42,11 @@ export interface IngestionResult {
   sources: SourceReport[];
 }
 
-/** Runs every adapter independently: one failing source never discards another source's data. */
+/**
+ * Runs every adapter independently and in parallel: one failing source never discards another
+ * source's data, and a slow source does not delay the rest of the feed. Normalization and
+ * de-duplication still happen in adapter order, so "first occurrence wins" stays deterministic.
+ */
 export async function ingestIncidents(adapters: SourceAdapter[], options: IngestOptions = {}): Promise<IngestionResult> {
   const config = options.config ?? DEFAULT_CONFIG;
   const now = options.now ?? (() => new Date());
@@ -53,16 +57,18 @@ export async function ingestIncidents(adapters: SourceAdapter[], options: Ingest
   const rejected: RejectedReport[] = [];
   const sources: SourceReport[] = [];
 
-  for (const adapter of adapters) {
+  const fetched = await Promise.all(adapters.map(async (adapter) => {
     try {
-      const { reports, skippedMalformed } = await adapter.fetchReports({ fetchFn, now, timeoutMs: config.httpTimeoutMs });
-      for (const raw of reports) {
-        const result = normalizeIncident(raw, retrievedAt, config);
-        if (result.ok) normalized.push(result.incident);
-        else rejected.push({ sourceId: adapter.id, url: typeof raw?.url === 'string' ? raw.url : null, reason: result.reason, detail: result.detail });
-      }
-      sources.push({ sourceId: adapter.id, status: 'ok', fetched: reports.length, skippedMalformed });
+      return { adapter, result: await adapter.fetchReports({ fetchFn, now, timeoutMs: config.httpTimeoutMs }) };
     } catch (error) {
+      return { adapter, error };
+    }
+  }));
+
+  for (const entry of fetched) {
+    const { adapter } = entry;
+    if ('error' in entry) {
+      const error = entry.error;
       const known = error instanceof SourceError;
       sources.push({
         sourceId: adapter.id,
@@ -73,7 +79,16 @@ export async function ingestIncidents(adapters: SourceAdapter[], options: Ingest
         errorMessage: known ? error.message : 'Unexpected adapter failure.',
         retryAfterMs: known ? error.retryAfterMs : undefined,
       });
+      continue;
     }
+
+    const { reports, skippedMalformed } = entry.result;
+    for (const raw of reports) {
+      const result = normalizeIncident(raw, retrievedAt, config);
+      if (result.ok) normalized.push(result.incident);
+      else rejected.push({ sourceId: adapter.id, url: typeof raw?.url === 'string' ? raw.url : null, reason: result.reason, detail: result.detail });
+    }
+    sources.push({ sourceId: adapter.id, status: 'ok', fetched: reports.length, skippedMalformed });
   }
 
   const { unique, duplicates } = deduplicateIncidents(normalized, options.existingIds);

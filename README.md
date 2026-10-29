@@ -20,9 +20,21 @@ The map uses Esri street tiles; review the tile provider's terms and quotas befo
 
 ## Hazard ingestion prototype
 
-`services/hazard-ingestion` is a server-side library for discovering road-incident news with GDELT DOC 2.0, validating and normalizing reports, and deduplicating results. GDELT is a news index, not an official traffic feed. Imported reports are always unverified evidence; the service never invents coordinates, scores routes, or stores data.
+`services/hazard-ingestion` is a server-side library for discovering road-incident news from Google News RSS (primary) and GDELT DOC 2.0 (secondary), validating and normalizing reports, and deduplicating results. Both are news indexes, not official traffic feeds. Imported reports are always unverified evidence; the service never invents coordinates, scores routes, or stores data. Sources are fetched in parallel and isolated, so a rate-limited source never empties the feed.
 
-The local Reports page fetches external evidence through the Node API. Text-only or ambiguous locations are not plotted, and imported reports do not affect OSRM route recommendations. Reports are not persisted or verified by this prototype.
+The planner and the Reports page fetch live evidence through the Node API and refresh automatically every 60 seconds. Text-only or ambiguous locations are not plotted, and imported reports do not affect OSRM route recommendations. Reports are not persisted or verified by this prototype.
+
+The same API also proxies current conditions (temperature, precipitation, WMO weather code) from Open-Meteo for the route origin, refreshed every 10 minutes. Weather is informational: it is not fed into the risk score.
+
+## Live data endpoints
+
+| Endpoint | Source | Cache | Purpose |
+|---|---|---|---|
+| `GET /api/incidents` | Google News RSS + GDELT DOC 2.0 | 2 min | Unverified road-incident headlines with publisher and publication time |
+| `GET /api/weather?lat=&lon=` | Open-Meteo | 10 min | Current conditions for the route origin |
+| `GET /api/health` | – | – | Liveness probe |
+
+The Vite dev server proxies `/api` to `http://127.0.0.1:3100` by default; set `HAZARD_API_URL` to point it elsewhere. The API itself honours `HAZARD_API_HOST` and `HAZARD_API_PORT`.
 
 GitHub Pages hosts only the static frontend and cannot run this Node API. Deploy the API separately and configure a production API URL/proxy before enabling external evidence there.
 
@@ -61,7 +73,8 @@ Then open `http://localhost:3000`.
 - `frontend/App.tsx` — app composition and page-level state.
 - `frontend/components/` — reusable UI and map components.
 - `frontend/data/` — clearly labelled local demo data.
-- `frontend/services/` — routing and risk-assessment adapters.
+- `frontend/services/` — routing, risk-assessment and live-data adapters.
+- `frontend/hooks/` — polling hooks that keep live data current.
 - `frontend/types/` — app-domain TypeScript interfaces.
 - `frontend/utils/` — formatting and coordinate helpers.
 - `frontend/riskEngine/` — standalone scoring, comparison, tests, and integration contract.

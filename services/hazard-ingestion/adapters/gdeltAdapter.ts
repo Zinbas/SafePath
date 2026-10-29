@@ -19,6 +19,8 @@ export interface GdeltAdapterOptions {
   maxRecords?: number;
   /** Minimum gap between requests from this adapter instance. Public guidance on limits is inconsistent; default is conservative. */
   minIntervalMs?: number;
+  /** Cap for this source so a throttled GDELT request cannot hold up the whole feed. */
+  timeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -52,7 +54,7 @@ export function createGdeltAdapter(options: GdeltAdapterOptions = {}): SourceAda
       const json = await fetchJson(buildGdeltUrl(options), {
         sourceId: GDELT_SOURCE_ID,
         fetchFn: context.fetchFn,
-        timeoutMs: context.timeoutMs,
+        timeoutMs: Math.min(context.timeoutMs, options.timeoutMs ?? context.timeoutMs),
         nowMs: context.now().getTime(),
         allowEmptyBody: true,
       });

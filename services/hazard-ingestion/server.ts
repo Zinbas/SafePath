@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { createGdeltAdapter } from './adapters/gdeltAdapter.ts';
+import { createGoogleNewsAdapter } from './adapters/googleNewsAdapter.ts';
 import { loadConfig } from './config.ts';
 import { ingestIncidents } from './ingestIncidents.ts';
 import type { IngestionResult } from './ingestIncidents.ts';
@@ -7,10 +8,30 @@ import type { IngestionResult } from './ingestIncidents.ts';
 const host = process.env.HAZARD_API_HOST ?? '127.0.0.1';
 const configuredPort = Number(process.env.HAZARD_API_PORT ?? '3100');
 const port = Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort <= 65_535 ? configuredPort : 3100;
-const adapters = [createGdeltAdapter({ maxRecords: 50, timespan: '24h' })];
-const cacheDurationMs = 5 * 60_000;
+// Google News RSS is the primary live news source; GDELT is kept as a second
+// (frequently rate-limited) source with a short timeout so it cannot stall the feed.
+const adapters = [
+  createGoogleNewsAdapter({ maxRecords: 30 }),
+  createGdeltAdapter({ maxRecords: 50, timespan: '24h', timeoutMs: 5000 }),
+];
+const cacheDurationMs = 2 * 60_000;
 let cachedResult: { result: IngestionResult; expiresAt: number } | null = null;
 let refreshInProgress: Promise<IngestionResult> | null = null;
+
+const weatherCacheDurationMs = 10 * 60_000;
+const weatherCache = new Map<string, { body: WeatherSnapshot; expiresAt: number }>();
+
+interface WeatherSnapshot {
+  latitude: number;
+  longitude: number;
+  temperatureC: number | null;
+  precipitationMm: number | null;
+  rainMm: number | null;
+  weatherCode: number | null;
+  observedAt: string | null;
+  timezone: string | null;
+  retrievedAt: string;
+}
 
 function sendJson(response: import('node:http').ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
@@ -39,11 +60,74 @@ function getIncidents() {
   return refreshInProgress;
 }
 
+function asFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+async function getWeather(latitude: number, longitude: number): Promise<WeatherSnapshot> {
+  const cacheKey = `${latitude.toFixed(3)},${longitude.toFixed(3)}`;
+  const cached = weatherCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.body;
+
+  const parameters = new URLSearchParams({
+    latitude: latitude.toFixed(4),
+    longitude: longitude.toFixed(4),
+    current: 'temperature_2m,precipitation,rain,weather_code',
+    timezone: 'Asia/Kolkata',
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const upstream = await fetch(`https://api.open-meteo.com/v1/forecast?${parameters}`, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!upstream.ok) throw new Error(`Open-Meteo returned HTTP ${upstream.status}.`);
+    const payload: unknown = await upstream.json();
+    if (typeof payload !== 'object' || payload === null) throw new Error('Open-Meteo returned an invalid body.');
+    const record = payload as Record<string, unknown>;
+    const current = typeof record.current === 'object' && record.current !== null
+      ? record.current as Record<string, unknown>
+      : {};
+
+    const snapshot: WeatherSnapshot = {
+      latitude,
+      longitude,
+      temperatureC: asFiniteNumber(current.temperature_2m),
+      precipitationMm: asFiniteNumber(current.precipitation),
+      rainMm: asFiniteNumber(current.rain),
+      weatherCode: asFiniteNumber(current.weather_code),
+      observedAt: typeof current.time === 'string' ? `${current.time}:00+05:30` : null,
+      timezone: typeof record.timezone === 'string' ? record.timezone : null,
+      retrievedAt: new Date().toISOString(),
+    };
+    weatherCache.set(cacheKey, { body: snapshot, expiresAt: Date.now() + weatherCacheDurationMs });
+    return snapshot;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const server = createServer(async (request, response) => {
   const requestUrl = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
 
   if (requestUrl.pathname === '/api/health' && request.method === 'GET') {
     sendJson(response, 200, { status: 'ok' });
+    return;
+  }
+
+  if (request.method === 'GET' && requestUrl.pathname === '/api/weather') {
+    const latitude = Number(requestUrl.searchParams.get('lat'));
+    const longitude = Number(requestUrl.searchParams.get('lon'));
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+      sendJson(response, 400, { error: 'Query parameters lat and lon must be valid coordinates.' });
+      return;
+    }
+    try {
+      sendJson(response, 200, await getWeather(latitude, longitude));
+    } catch {
+      sendJson(response, 503, { error: 'Live weather is temporarily unavailable.' });
+    }
     return;
   }
 

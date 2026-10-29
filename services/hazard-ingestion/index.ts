@@ -8,3 +8,5 @@ export type { DedupeResult, DuplicateRecord } from './deduplicate.ts';
 export { ingestIncidents } from './ingestIncidents.ts';
 export type { IngestOptions, IngestionResult, SourceReport, RejectedReport } from './ingestIncidents.ts';
 export { createGdeltAdapter, buildGdeltUrl, GDELT_SOURCE_ID } from './adapters/gdeltAdapter.ts';
+export { createGoogleNewsAdapter, buildGoogleNewsUrl, parseRssItems, GOOGLE_NEWS_SOURCE_ID } from './adapters/googleNewsAdapter.ts';
+export type { GoogleNewsAdapterOptions, RssItem } from './adapters/googleNewsAdapter.ts';

@@ -7,6 +7,7 @@ export type HazardType =
   | 'Road obstruction'
   | 'Road closure'
   | 'Low lighting'
+  | 'Pothole'
   | 'Flooding'
   | 'Traffic incident';
 

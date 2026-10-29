@@ -43,7 +43,9 @@ export async function fetchExternalIncidents(signal: AbortSignal): Promise<Inges
   ) {
     const detail = body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
       ? body.error
-      : `The API returned an invalid response (HTTP ${response.status}).`;
+      : response.status === 502 || response.status === 504 || response.status === 404
+        ? 'The live data API is not reachable. Start it with "npm run dev:api".'
+        : `The API returned an invalid response (HTTP ${response.status}).`;
     throw new Error(detail);
   }
 
