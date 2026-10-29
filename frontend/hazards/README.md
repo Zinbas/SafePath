@@ -27,10 +27,10 @@ the trusted path needs a backend.**
 | Field | Type | Notes |
 |---|---|---|
 | `id` | string | non-empty, ≤128 chars, unique across located *and* unlocated records |
-| `type` | `'Road obstruction' \| 'Low lighting' \| 'Flooding' \| 'Traffic incident'` | same values as the existing UI |
+| `type` | `'Road obstruction' \| 'Road closure' \| 'Low lighting' \| 'Flooding' \| 'Traffic incident'` | preserves the existing report-form choices |
 | `description` | string | trimmed, non-empty, ≤2000 chars |
 | `latitude`, `longitude` | number (WGS84 degrees) | finite; lat −90..90, lon −180..180. `null` for `UnlocatedHazard` |
-| `severity` | `1 \| 2 \| 3` | integers only: 1 Low, 2 Medium, 3 High (`SEVERITY_LABELS`) |
+| `severity` | `1 \| 2 \| 3 \| 4` | integers only: 1 Low, 2 Medium, 3 High, 4 Severe (`SEVERITY_LABELS`) |
 | `reportedAt` | string | ISO 8601 **with timezone**, normalised to UTC (`2026-10-29T04:30:00.000Z`); future > 5 min rejected |
 | `source` | `'community' \| 'official' \| 'news' \| 'demo'` | `demo` = simulated; never present as a real current incident |
 | `verificationStatus` | `'unverified' \| 'verified'` | |
@@ -118,7 +118,6 @@ await submitCommunityHazard({ type, severity: 2, description, latitude, longitud
 
 ## Tests
 
-`tests/hazards/hazards.test.ts` (Node's built-in `node:test`; synthetic fixtures only, in `tests/hazards/fixtures.ts`).
-No test framework existed in the repo. Run with `npx tsx --test tests/hazards/*.test.ts`. To make it a project script, run
-`npm i -D tsx @types/node` and add `"test": "tsx --test tests/hazards/*.test.ts"` (this changes `package.json` and the lockfile, so it was not done here;
-CI uses `npm ci`). The `tests/` folder is outside `tsconfig.app.json`'s `include`, so it does not affect `npm run build`.
+Hazard validation, service, seed, and route-adapter tests use Node's built-in `node:test` with synthetic fixtures only.
+Run them with `npm run test:hazards`. The `tests/` folder is outside `tsconfig.app.json`'s `include`, so the production build
+does not typecheck or execute those tests; the GitHub Actions workflow runs them explicitly.

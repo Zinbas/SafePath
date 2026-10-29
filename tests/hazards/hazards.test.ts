@@ -55,6 +55,11 @@ describe('1. valid hazard creation', () => {
     assert.equal(stored.locationConfidence, 'approximate');
     await assertRejects(service.ingestHazard(synthetic({ id: 'n2', sourceUrl: 'javascript:alert(1)' })), 'sourceUrl');
   });
+  it('preserves road-closure and severe values in the shared model', async () => {
+    const stored = await makeService().ingestHazard(synthetic({ id: 'closure', type: 'Road closure', severity: 4 }));
+    assert.equal(stored.type, 'Road closure');
+    assert.equal(stored.severity, 4);
+  });
 });
 
 describe('2-3. coordinate validation', () => {
@@ -101,7 +106,7 @@ describe('4-5. required fields, timestamps, severity', () => {
     await assertRejects(service.ingestHazard({ ...synthetic({ id: 's' }), source: 'rumour' } as never), 'source');
     await assertRejects(service.ingestHazard({ ...synthetic({ id: 'v' }), verificationStatus: 'maybe' } as never), 'verificationStatus');
   });
-  for (const severity of [0, 4, 1.5, -1, NaN, '2', null, undefined]) {
+  for (const severity of [0, 5, 1.5, -1, NaN, '2', null, undefined]) {
     it(`rejects severity ${String(severity)}`, async () => {
       await assertRejects(makeService().submitCommunityHazard(communityInput({ severity })), 'severity');
     });
@@ -119,6 +124,12 @@ describe('4-5. required fields, timestamps, severity', () => {
   it('normalizeTimestamp accepts leap day and rejects invalid leap day', () => {
     assert.equal(normalizeTimestamp('2028-02-29T00:00:00Z'), '2028-02-29T00:00:00.000Z');
     assert.equal(normalizeTimestamp('2026-02-29T00:00:00Z'), null);
+  });
+  it('accepts the ISO timezone offset boundary and rejects offsets beyond ±14:00', () => {
+    assert.equal(normalizeTimestamp('2026-10-29T08:00:00+14:00'), '2026-10-28T18:00:00.000Z');
+    for (const offset of ['+14:01', '-14:01', '+15:00', '+23:59', '+00:60']) {
+      assert.equal(normalizeTimestamp(`2026-10-29T08:00:00${offset}`), null, `offset ${offset} must be rejected`);
+    }
   });
 });
 

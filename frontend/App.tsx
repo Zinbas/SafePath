@@ -6,7 +6,6 @@ import {
   ArrowUpRight,
   Bell,
   Check,
-  ChevronDown,
   CircleDot,
   Clock3,
   Compass,
@@ -15,7 +14,6 @@ import {
   Flag,
   Gauge,
   Info,
-  Layers3,
   LocateFixed,
   MapPin,
   Menu,
@@ -40,6 +38,10 @@ import {
   DEMO_HAZARDS,
 } from './hazards';
 import type { Hazard, HazardType, Severity } from './hazards';
+import ExternalIncidents from './components/ExternalIncidents';
+import { adaptHazardServiceRecords, assessRoutes } from './services/riskAssessment';
+import { compareRoutes } from './riskEngine';
+import type { RoutePreference } from './riskEngine';
 import 'leaflet/dist/leaflet.css';
 import './styles.css';
 
@@ -151,6 +153,7 @@ function App() {
   const [routes, setRoutes] = useState<Route[]>([]);
   const [snappedWaypoints, setSnappedWaypoints] = useState<[number, number][]>([]);
   const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
+  const [routePreference, setRoutePreference] = useState<RoutePreference>('balanced');
   const [routeState, setRouteState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [routeError, setRouteError] = useState('');
   const [inputError, setInputError] = useState('');
@@ -183,6 +186,10 @@ function App() {
   const selectedHazard = hazards.find((hazard) => hazard.id === selectedHazardId) ?? null;
   const showGuwahatiHazards = snappedWaypoints.length === 2
     && snappedWaypoints.every(([longitude, latitude]) => latitude >= 25.9 && latitude <= 26.4 && longitude >= 91.5 && longitude <= 92.1);
+  const engineHazards = adaptHazardServiceRecords(hazards, showGuwahatiHazards);
+  const routeRiskResults = assessRoutes(routes, engineHazards);
+  const routeComparison = compareRoutes(routeRiskResults, routePreference);
+  const activeRisk = routeRiskResults.find((result) => result.routeId === activeRouteId) ?? null;
 
   const notify = (message: string) => {
     setToast(message);
@@ -261,9 +268,13 @@ function App() {
         durationSeconds: route.durationSeconds,
         color: ['#15803d', '#d97706', '#2563eb'][index % 3],
       }));
+      const localCoverage = result.waypoints.length === 2
+        && result.waypoints.every(([longitude, latitude]) => latitude >= 25.9 && latitude <= 26.4 && longitude >= 91.5 && longitude <= 92.1);
+      const initialAssessments = assessRoutes(receivedRoutes, adaptHazardServiceRecords(hazards, localCoverage));
+      const recommendation = compareRoutes(initialAssessments, routePreference).recommendedRouteId;
       setRoutes(receivedRoutes);
       setSnappedWaypoints(result.waypoints);
-      setActiveRouteId(receivedRoutes[0].id);
+      setActiveRouteId(recommendation ?? receivedRoutes[0].id);
       setRouteState('ready');
       setMapRecenterKey((value) => value + 1);
     } catch (error) {
@@ -327,7 +338,7 @@ function App() {
     const locationKey = String(form.get('location') || 'AT Road');
     const selectedLocation = CORRIDOR_PRESETS[locationKey] ?? CORRIDOR_PRESETS['AT Road'];
     const rawSeverity = String(form.get('severity') || 'Medium');
-    const severityMap: Record<string, Severity> = { Low: 1, Medium: 2, High: 3 };
+    const severityMap: Record<string, Severity> = { Low: 1, Medium: 2, High: 3, Severe: 4 };
     const severity = severityMap[rawSeverity] ?? 2;
     const description = String(form.get('description') || '').trim();
 
@@ -345,7 +356,7 @@ function App() {
       setHazards(updatedList);
       setSelectedHazardId(created.id);
       setShowReport(false);
-      notify('Report added to the local demo report list. It does not change road routing.');
+      notify('Local report added. It is included in the prototype route estimate, not a safety guarantee.');
       formElement.reset();
     } catch (error) {
       if (error instanceof HazardValidationError) {
@@ -384,8 +395,8 @@ function App() {
 
       <main className="page-content">
         <section className="demo-banner">
-          <div className="banner-copy"><Info size={16} /><span><strong>Road routing:</strong> routes come from OSRM. Duration is an estimate and does not guarantee live traffic conditions.</span></div>
-          <div className="banner-meta">Source <strong>OSRM driving</strong></div>
+          <div className="banner-copy"><Info size={16} /><span><strong>Prototype risk estimate:</strong> demo hazard pins use approximate map positions; this score is not a probability or a safety guarantee.</span></div>
+          <div className="banner-meta">Routing <strong>OSRM driving</strong></div>
         </section>
 
         {activeTab === 'planner' && (
@@ -418,20 +429,34 @@ function App() {
               </section>
 
               <section className="routes-section">
-                <div className="section-heading"><div><div className="heading-with-icon"><RouteIcon size={17} /><h2>Road routes <span className="muted">({routes.length})</span></h2></div><p>OSRM driving alternatives · when available</p></div><span className="freshness"><span className="live-dot" /> {routeState === 'ready' ? 'updated' : 'OSRM'}</span></div>
+                <div className="section-heading"><div><div className="heading-with-icon"><RouteIcon size={17} /><h2>Road routes <span className="muted">({routes.length})</span></h2></div><p>Ranked by travel time and estimated reported hazards</p></div><span className="freshness"><span className="live-dot" /> {routeState === 'ready' ? 'scored' : 'OSRM'}</span></div>
+                {routes.length > 0 && <div className="preference-control" role="group" aria-label="Route ranking preference">
+                  <span>Preference</span>
+                  {(['quickest', 'balanced', 'lower-risk'] as const).map((preference) => <button key={preference} type="button" className={routePreference === preference ? 'active' : ''} aria-pressed={routePreference === preference} onClick={() => {
+                    setRoutePreference(preference);
+                    const recommended = compareRoutes(routeRiskResults, preference).recommendedRouteId;
+                    if (recommended) setActiveRouteId(recommended);
+                  }}>{preference === 'lower-risk' ? 'Lower risk' : preference[0]?.toUpperCase() + preference.slice(1)}</button>)}
+                </div>}
                 {routeState === 'loading' && <div className="routing-message" role="status">Requesting road routes from OSRM…</div>}
                 {routeState === 'error' && <div className="routing-message error-message" role="alert">{routeError}</div>}
                 {routeState === 'idle' && <div className="routing-message">Search for both locations, select a result for each, then request routes.</div>}
                 {routeState === 'ready' && routes.length === 0 && <div className="routing-message">No road routes were returned. Adjust the locations and try again.</div>}
                 <div className="route-card-list">
-                  {routes.map((route, index) => {
+                  {routeComparison.ranked.map((rankedRoute, index) => {
+                    const route = routes.find((candidate) => candidate.id === rankedRoute.routeId);
+                    if (!route) return null;
+                    const risk = rankedRoute.result;
                     const isActive = route.id === activeRouteId;
                     return <button key={route.id} className={`route-card ${isActive ? 'selected' : ''}`} onClick={() => { setActiveRouteId(route.id); setSelectedHazardId(null); }}>
-                      <div className="route-card-top"><div><div className="route-title-row"><span className="route-index">0{index + 1}</span><h3>{route.name}</h3>{index === 0 && <span className="recommended-chip">OSRM rank 1</span>}</div><p>{route.subtitle}</p></div><ArrowUpRight size={17} className="muted" /></div>
+                      <div className="route-card-top"><div><div className="route-title-row"><span className="route-index">0{rankedRoute.rank}</span><h3>{route.name}</h3>{rankedRoute.rank === 1 && routeComparison.recommendedRouteId && <span className="recommended-chip">Best match</span>}{rankedRoute.blocked && <span className="risk-chip danger">Reported closure</span>}</div><p>{route.subtitle}</p></div><ArrowUpRight size={17} className="muted" /></div>
                       <div className="metric-grid"><div><span className="metric-label">Distance</span><strong>{formatDistance(route.distanceMeters)}</strong></div><div><span className="metric-label">Estimated time</span><strong>{formatDuration(route.durationSeconds)}</strong></div><div><span className="metric-label">Road type</span><strong>Driving</strong></div></div>
+                      <div className="route-risk-row"><span className={`risk-chip ${risk.category === 'High' || risk.category === 'Very High' ? 'danger' : risk.coverage.level !== 'adequate' ? 'caution' : 'good'}`}>{risk.displayLabel}</span><strong>{risk.assessment === 'assessed' ? `${risk.score}/100` : '—'}</strong></div>
+                      {rankedRoute.criticalWarnings.length > 0 && <div className="route-warning-preview"><AlertTriangle size={13} /> {rankedRoute.criticalWarnings[0]?.message}</div>}
                       {isActive && <div className="selected-line"><Check size={13} /> Selected route · highlighted on map</div>}
                     </button>;
                   })}
+                {routes.length > 0 && <div className="comparison-note">{routeComparison.notes.join(' ')}</div>}
                 </div>
               </section>
 
@@ -439,7 +464,14 @@ function App() {
                 {activeRoute ? <>
                   <div className="section-heading"><div><div className="eyebrow">Selected OSRM route</div><h2>{activeRoute.name}</h2></div><span className="status-label good">Driving</span></div>
                   <div className="detail-summary"><div><span className="metric-label">Estimated time</span><strong>{formatDuration(activeRoute.durationSeconds)}</strong><small>not live traffic</small></div><div><span className="metric-label">Distance</span><strong>{formatDistance(activeRoute.distanceMeters)}</strong><small>OSRM road geometry</small></div><div><span className="metric-label">Alternatives</span><strong>{routes.length}</strong><small>returned by OSRM</small></div></div>
-                  <div className="detail-warning"><div className="warning-icon"><AlertTriangle size={15} /></div><div><strong>Routing does not include hazard scoring</strong><p>Curated demo hazard markers are separate from these road directions and do not affect route selection.</p></div></div>
+                  {activeRisk && <section className="risk-detail" aria-label="Selected route hazard assessment">
+                    <div className="risk-detail-heading"><div><div className="eyebrow">Estimated reported-hazard risk</div><h3>{activeRisk.displayLabel}</h3></div><span className={`risk-score ${activeRisk.category === 'High' || activeRisk.category === 'Very High' ? 'danger' : ''}`}>{activeRisk.assessment === 'assessed' ? `${activeRisk.score}/100` : 'Unknown'}</span></div>
+                    <div className="coverage-note"><Info size={14} /><span>Data coverage: <strong>{activeRisk.coverage.level}</strong>. {activeRisk.coverage.note}</span></div>
+                    {activeRisk.criticalWarnings.map((warning) => <div className="critical-warning" key={warning.hazardId}><AlertTriangle size={15} /><span>{warning.message}</span></div>)}
+                    {activeRisk.blocked.isBlocked && <div className="critical-warning blocked-note"><Shield size={15} /><span>{activeRisk.blocked.reason}</span></div>}
+                    <ul className="risk-explanations">{activeRisk.explanations.slice(0, 5).map((explanation, index) => <li key={`${index}-${explanation}`}>{explanation}</li>)}</ul>
+                    <p className="risk-disclaimer">Relative prototype score only—not a probability of harm. Demo pins are approximate and the absence of reports does not mean a road is safe.</p>
+                  </section>}
                 </> : <div className="empty-route-detail"><div className="eyebrow">Route details</div><p>Select two locations and request road routes to see distance and estimated duration.</p></div>}
               </section>
             </aside>
@@ -455,7 +487,7 @@ function App() {
                     <CircleMarker center={[snappedWaypoints[0][1], snappedWaypoints[0][0]]} radius={10} pathOptions={{ color: '#15803d', fillColor: '#ffffff', fillOpacity: 1, weight: 4 }}><Popup><strong>Origin</strong><br />{originSelection?.displayName}</Popup></CircleMarker>
                     <CircleMarker center={[snappedWaypoints[snappedWaypoints.length - 1][1], snappedWaypoints[snappedWaypoints.length - 1][0]]} radius={10} pathOptions={{ color: '#dc2626', fillColor: '#ffffff', fillOpacity: 1, weight: 4 }}><Popup><strong>Destination</strong><br />{destinationSelection?.displayName}</Popup></CircleMarker>
                   </>}
-                  {mapLayers.evidence && showGuwahatiHazards && hazards.map((hazard) => <CircleMarker key={hazard.id} center={[hazard.latitude, hazard.longitude]} radius={selectedHazardId === hazard.id ? 10 : 8} pathOptions={{ color: '#ffffff', fillColor: hazard.severity === 3 ? '#dc2626' : '#d97706', fillOpacity: 1, weight: 2 }} eventHandlers={{ click: () => setSelectedHazardId(hazard.id) }}><Popup><strong>{hazard.title ?? hazard.type}</strong><br />{hazard.locationLabel ?? 'Guwahati'}<br /><button className="map-popup-button" onClick={() => setSelectedHazardId(hazard.id)}>Inspect evidence</button></Popup></CircleMarker>)}
+                  {mapLayers.evidence && showGuwahatiHazards && hazards.map((hazard) => <CircleMarker key={hazard.id} center={[hazard.latitude, hazard.longitude]} radius={selectedHazardId === hazard.id ? 10 : 8} pathOptions={{ color: '#ffffff', fillColor: hazard.severity >= 3 ? '#dc2626' : '#d97706', fillOpacity: 1, weight: 2 }} eventHandlers={{ click: () => setSelectedHazardId(hazard.id) }}><Popup><strong>{hazard.title ?? hazard.type}</strong><br />{hazard.locationLabel ?? 'Guwahati'}<br /><button className="map-popup-button" onClick={() => setSelectedHazardId(hazard.id)}>Inspect evidence</button></Popup></CircleMarker>)}
                 </MapContainer>
                 <div className="map-legend"><div><span className="legend-line green-line" /> selected route</div><div><span className="legend-line amber-line" /> alternative route</div><div><span className="legend-dot red-dot" /> route endpoints</div><div><span className="legend-dot" /> curated demo hazard</div></div>
                 <div className="map-attribution">Roads by OSRM · ETAs are estimates, not live traffic predictions</div>
@@ -486,14 +518,14 @@ function HazardDrawer({ hazard, onClose }: { hazard: Hazard; onClose: () => void
   const locationLabel = hazard.locationLabel ?? 'Guwahati corridor';
   const title = hazard.title ?? `${hazard.type} reported`;
 
-  return <aside className="hazard-drawer"><div className="drawer-top"><div className="heading-with-icon"><span className={`icon-box ${hazard.severity === 3 ? 'red' : 'amber'}`}><AlertTriangle size={17} /></span><div><div className="eyebrow">Demo evidence detail</div><h2>{title}</h2></div></div><button className="icon-button" onClick={onClose}><X size={16} /></button></div><div className="drawer-status-row"><span className={`status-label ${verificationLabel === 'Verified' ? 'good' : 'neutral'}`}>{verificationLabel}</span><span className="freshness-label"><Clock3 size={13} /> {freshnessLabel}</span></div><div className="drawer-grid"><div><span className="metric-label">Location</span><strong>{locationLabel}</strong></div><div><span className="metric-label">Severity</span><strong className={hazard.severity === 3 ? 'red-text' : 'amber-text'}>{severityLabel}</strong></div><div><span className="metric-label">Source</span><strong>{sourceLabel}</strong></div></div><p className="drawer-summary">{hazard.description}</p><div className="uncertainty-box"><Info size={15} /><span>Curated demo evidence shown for Guwahati only. It is not matched to the returned OSRM road geometry.</span></div><div className="button-row"><button className="text-button" onClick={onClose}>Close <X size={13} /></button></div></aside>;
+  return <aside className="hazard-drawer"><div className="drawer-top"><div className="heading-with-icon"><span className={`icon-box ${hazard.severity >= 3 ? 'red' : 'amber'}`}><AlertTriangle size={17} /></span><div><div className="eyebrow">Hazard evidence detail</div><h2>{title}</h2></div></div><button className="icon-button" onClick={onClose}><X size={16} /></button></div><div className="drawer-status-row"><span className={`status-label ${verificationLabel === 'Verified' ? 'good' : 'neutral'}`}>{verificationLabel}</span><span className="freshness-label"><Clock3 size={13} /> {freshnessLabel}</span></div><div className="drawer-grid"><div><span className="metric-label">Location</span><strong>{locationLabel}</strong></div><div><span className="metric-label">Severity</span><strong className={hazard.severity >= 3 ? 'red-text' : 'amber-text'}>{severityLabel}</strong></div><div><span className="metric-label">Source</span><strong>{sourceLabel}</strong></div></div><p className="drawer-summary">{hazard.description}</p><div className="uncertainty-box"><Info size={15} /><span>Locations are approximate where noted. The route score is a relative prototype estimate, not a safety guarantee.</span></div><div className="button-row"><button className="text-button" onClick={onClose}>Close <X size={13} /></button></div></aside>;
 }
 
 function ReportsView({ hazards, onSelect, onReport }: { hazards: Hazard[]; onSelect: (id: string) => void; onReport: () => void }) {
   const verifiedCount = hazards.filter((h) => h.verificationStatus === 'verified').length;
   const needsReviewCount = hazards.filter((h) => h.verificationStatus === 'unverified').length;
 
-  return <div className="content-page"><div className="content-page-header"><div><div className="eyebrow">Evidence ledger · Guwahati pilot</div><h1>Recent hazard reports</h1><p>Reports show their source, freshness, and verification state; they are not used in road routing yet.</p></div><button className="primary-button" onClick={onReport}><Plus size={16} /> Report a hazard</button></div><div className="report-summary-strip"><div><strong>{hazards.length}</strong><span>tracked items</span></div><div><strong>{verifiedCount}</strong><span>verified signals</span></div><div><strong>{needsReviewCount}</strong><span>needs review</span></div><div><strong>Demo</strong><span>local session only</span></div></div><div className="report-list">{hazards.map((hazard) => {
+  return <div className="content-page"><div className="content-page-header"><div><div className="eyebrow">Evidence ledger · Guwahati pilot</div><h1>Recent hazard reports</h1><p>Local hazard evidence informs prototype route estimates; the separate external news feed is informational and does not affect ranking.</p></div><button className="primary-button" onClick={onReport}><Plus size={16} /> Report a hazard</button></div><div className="report-summary-strip"><div><strong>{hazards.length}</strong><span>tracked items</span></div><div><strong>{verifiedCount}</strong><span>verified signals</span></div><div><strong>{needsReviewCount}</strong><span>needs review</span></div><div><strong>Demo</strong><span>local session only</span></div></div><div className="report-list">{hazards.map((hazard) => {
     const severityLabel = SEVERITY_LABELS[hazard.severity];
     const verificationLabel = getDisplayVerification(hazard);
     const freshnessLabel = formatFreshness(hazard.reportedAt);
@@ -501,16 +533,16 @@ function ReportsView({ hazards, onSelect, onReport }: { hazards: Hazard[]; onSel
     const locationLabel = hazard.locationLabel ?? 'Guwahati corridor';
     const title = hazard.title ?? `${hazard.type} reported`;
 
-    return <button className="report-row" key={hazard.id} onClick={() => onSelect(hazard.id)}><div className={`report-icon ${severityLabel.toLowerCase()}`}><AlertTriangle size={17} /></div><div className="report-main"><div className="report-title-row"><h2>{title}</h2><span className={`status-label ${verificationLabel === 'Verified' ? 'good' : 'neutral'}`}>{verificationLabel}</span></div><p>{hazard.description}</p><div className="report-meta"><span><MapPin size={13} /> {locationLabel}</span><span><Clock3 size={13} /> {freshnessLabel}</span><span><FileText size={13} /> {sourceLabel}</span></div></div><div className="report-impact"><span className="metric-label">Evidence</span><strong>{severityLabel}</strong><ArrowRight size={15} /></div></button>;
-  })}</div></div>;
+    return <button className="report-row" key={hazard.id} onClick={() => onSelect(hazard.id)}><div className={`report-icon ${severityLabel === 'Severe' ? 'high' : severityLabel.toLowerCase()}`}><AlertTriangle size={17} /></div><div className="report-main"><div className="report-title-row"><h2>{title}</h2><span className={`status-label ${verificationLabel === 'Verified' ? 'good' : 'neutral'}`}>{verificationLabel}</span></div><p>{hazard.description}</p><div className="report-meta"><span><MapPin size={13} /> {locationLabel}</span><span><Clock3 size={13} /> {freshnessLabel}</span><span><FileText size={13} /> {sourceLabel}</span></div></div><div className="report-impact"><span className="metric-label">Evidence</span><strong>{severityLabel}</strong><ArrowRight size={15} /></div></button>;
+  })}</div><ExternalIncidents /></div>;
 }
 
 function MethodologyView() {
-  return <div className="content-page methodology-page"><div className="content-page-header"><div><div className="eyebrow">Routing sources</div><h1>About road routing</h1><p>Locations are resolved with user-triggered OpenStreetMap Nominatim searches. Selected coordinates are sent to OSRM for driving routes.</p></div><div className="method-badge"><RouteIcon size={17} /> OSRM driving</div></div><div className="method-grid"><section className="method-card"><div className="method-card-heading"><span className="number-badge">01</span><div><h2>Confirm locations</h2><p>Each entered address must be searched and a matching place selected before routing. Ambiguous text is never converted to an assumed coordinate.</p></div></div></section><section className="method-card"><div className="method-card-heading"><span className="number-badge">02</span><div><h2>Compare returned roads</h2><p>OSRM supplies route geometry, distance, and estimated duration. It may return fewer alternatives than requested.</p></div></div></section><section className="method-card"><div className="method-card-heading"><span className="number-badge">03</span><div><h2>Keep evidence separate</h2><p>Hazard markers and submitted reports are local prototype data. They are not matched to route geometry or used to rank road options.</p></div></div></section><section className="method-card wide limitation-card"><Info size={18} className="amber-text" /><div><h2>Important limitation</h2><p>Estimated duration is not a live traffic prediction and does not guarantee safety. Public geocoding and routing services have availability and usage limits; this prototype is not for emergency navigation.</p></div></section></div></div>;
+  return <div className="content-page methodology-page"><div className="content-page-header"><div><div className="eyebrow">Routing sources</div><h1>About road routing</h1><p>Locations are resolved with user-triggered OpenStreetMap Nominatim searches. Selected coordinates are sent to OSRM for driving routes.</p></div><div className="method-badge"><RouteIcon size={17} /> OSRM driving</div></div><div className="method-grid"><section className="method-card"><div className="method-card-heading"><span className="number-badge">01</span><div><h2>Confirm locations</h2><p>Each entered address must be searched and a matching place selected before routing. Ambiguous text is never converted to an assumed coordinate.</p></div></div></section><section className="method-card"><div className="method-card-heading"><span className="number-badge">02</span><div><h2>Compare returned roads</h2><p>OSRM supplies route geometry, distance, and estimated duration. It may return fewer alternatives than requested.</p></div></div></section><section className="method-card"><div className="method-card-heading"><span className="number-badge">03</span><div><h2>Prototype hazard scoring</h2><p>Located local hazards are adapted into a relative estimate against OSRM route geometry. The current store is per-tab and community corridor pins are approximate; external news reports do not affect ranking.</p></div></div></section><section className="method-card wide limitation-card"><Info size={18} className="amber-text" /><div><h2>Important limitation</h2><p>Risk is a relative estimate, not a probability or safety guarantee. Demo positions and coverage are approximate; use a verified hazard service before relying on real-world recommendations. This prototype is not for emergency navigation.</p></div></section></div></div>;
 }
 
 function ReportModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void }) {
-  return <div className="modal-scrim"><div className="modal-card"><div className="modal-heading"><div><div className="eyebrow">Community evidence · demo</div><h2>Report a hazard</h2><p>New reports are marked <strong>Needs review</strong> and do not affect road routing.</p></div><button className="icon-button" onClick={onClose}><X size={17} /></button></div><form onSubmit={onSubmit}><div className="form-grid"><label>Hazard type<select name="type" defaultValue="Road obstruction"><option>Road obstruction</option><option>Low lighting</option><option>Flooding</option><option>Traffic incident</option></select></label><label>Severity<select name="severity" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option></select></label><label>Nearby corridor<select name="location" defaultValue="AT Road"><option>AT Road</option><option>GS Road</option><option>Panbazar</option></select></label><label className="full-width">What did you observe?<textarea name="description" required minLength={10} placeholder="Describe the issue briefly, including what a traveller should look out for." /></label></div><div className="form-note"><Info size={14} /> Do not include personal information. This prototype stores the report only in the current demo session.</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><Flag size={15} /> Submit report</button></div></form></div></div>;
+  return <div className="modal-scrim"><div className="modal-card"><div className="modal-heading"><div><div className="eyebrow">Community evidence · demo</div><h2>Report a hazard</h2><p>Local demo submissions affect prototype estimates using approximate map positions.</p></div><button className="icon-button" onClick={onClose}><X size={17} /></button></div><form onSubmit={onSubmit}><div className="form-grid"><label>Hazard type<select name="type" defaultValue="Road obstruction"><option>Road obstruction</option><option>Road closure</option><option>Low lighting</option><option>Flooding</option><option>Traffic incident</option></select></label><label>Severity<select name="severity" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option><option>Severe</option></select></label><label>Nearby corridor<select name="location" defaultValue="AT Road"><option>AT Road</option><option>GS Road</option><option>Panbazar</option></select></label><label className="full-width">What did you observe?<textarea name="description" required minLength={10} placeholder="Describe the issue briefly, including what a traveller should look out for." /></label></div><div className="form-note"><Info size={14} /> Do not include personal information. This prototype stores the report only in the current demo session.</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><Flag size={15} /> Submit report</button></div></form></div></div>;
 }
 
 export default App;

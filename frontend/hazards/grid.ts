@@ -60,7 +60,7 @@ export const UNKNOWN_COVERAGE: DataCoverage = 'unknown';
 export interface GridCellSummary {
   cell: GridCell;
   hazardCount: number;
-  /** Highest severity (1-3) among hazards in the cell. */
+  /** Highest severity (1-4) among hazards in the cell. */
   maxSeverity: number;
   /** Arithmetic mean severity, unrounded (sum / count). */
   averageSeverity: number;

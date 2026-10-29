@@ -21,7 +21,7 @@ export const DEMO_HAZARDS: TrustedHazardInput[] = [
     severity: 2,
     reportedAt: '2026-10-29T07:15:00.000Z',
     source: 'demo',
-    verificationStatus: 'verified',
+    verificationStatus: 'unverified',
     locationConfidence: 'approximate',
   },
   {

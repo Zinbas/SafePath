@@ -2,13 +2,13 @@
  * Shared hazard data model (Person B).
  *
  * Mapping from the legacy, App.tsx-local demo type (not exported, pixel-based):
- *   severity  'Low' | 'Medium' | 'High'              -> 1 | 2 | 3
+ *   severity  'Low' | 'Medium' | 'High' | 'Severe'  -> 1 | 2 | 3 | 4
  *   verification 'Verified'                          -> 'verified'
  *   verification 'Reported' | 'Needs review'         -> 'unverified'
  *   point {x, y} (screen-space)                      -> latitude / longitude (WGS84 degrees)
  */
 
-export const HAZARD_TYPES = ['Road obstruction', 'Low lighting', 'Flooding', 'Traffic incident'] as const;
+export const HAZARD_TYPES = ['Road obstruction', 'Road closure', 'Low lighting', 'Flooding', 'Traffic incident'] as const;
 export type HazardType = (typeof HAZARD_TYPES)[number];
 
 /** `demo` records are simulated and must never be presented as real current incidents. */
@@ -23,13 +23,15 @@ export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number];
  *   1 = Low    - minor inconvenience or evidence gap
  *   2 = Medium - noticeable delay or hazard; caution advised
  *   3 = High   - serious hazard or blockage
+ *   4 = Severe - major hazard or reported closure
  */
-export const SEVERITY_LEVELS = [1, 2, 3] as const;
+export const SEVERITY_LEVELS = [1, 2, 3, 4] as const;
 export type Severity = (typeof SEVERITY_LEVELS)[number];
-export const SEVERITY_LABELS: Readonly<Record<Severity, 'Low' | 'Medium' | 'High'>> = {
+export const SEVERITY_LABELS: Readonly<Record<Severity, 'Low' | 'Medium' | 'High' | 'Severe'>> = {
   1: 'Low',
   2: 'Medium',
   3: 'High',
+  4: 'Severe',
 };
 
 export type LocationConfidence = 'exact' | 'approximate';

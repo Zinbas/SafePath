@@ -3,6 +3,8 @@ name: Deploy Safe Route to GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -11,7 +13,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -27,14 +29,24 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Test route risk engine
+        run: npm run test:risk
+      - name: Test hazard module
+        run: npm run test:hazards
+      - name: Test hazard ingestion
+        run: npm run test:ingest
+      - name: Typecheck hazard ingestion
+        run: npm run typecheck:ingest
       - name: Build
         run: npm run build
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

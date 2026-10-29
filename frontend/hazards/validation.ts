@@ -52,7 +52,7 @@ function readText(raw: Raw, field: string, issues: ValidationIssue[], required: 
   return trimmed;
 }
 
-const TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+const TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(?:Z|([+-])(\d{2}):(\d{2}))$/;
 
 /**
  * Parses a strict ISO 8601 date-time (with `Z` or numeric offset) and returns it normalised to UTC.
@@ -62,13 +62,18 @@ export function normalizeTimestamp(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const match = TIMESTAMP_PATTERN.exec(value.trim());
   if (!match) return null;
-  const [, y, mo, d, h, mi, s] = match;
+  const [, y, mo, d, h, mi, s, offsetSign, offsetHours, offsetMinutes] = match;
   const year = Number(y);
   const month = Number(mo);
   const day = Number(d);
   if (month < 1 || month > 12 || day < 1) return null;
   if (day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return null;
   if (Number(h) > 23 || Number(mi) > 59 || (s !== undefined && Number(s) > 59)) return null;
+  if (offsetSign !== undefined) {
+    const hours = Number(offsetHours);
+    const minutes = Number(offsetMinutes);
+    if (minutes > 59 || hours > 14 || (hours === 14 && minutes !== 0)) return null;
+  }
   const ms = Date.parse(value.trim());
   return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }

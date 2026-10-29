@@ -8,20 +8,69 @@ A hackathon prototype for hazard-aware route recommendations. The frontend uses 
 - Select a matching place for each input; the app does not route unconfirmed or failed searches.
 - Request driving routes from the public OSRM Route API with alternatives and full GeoJSON geometry.
 - Compare the returned distances and estimated durations, select a route, and view it on the map.
-- Curated hazard reports remain local demo evidence and are not matched to returned routes or used in route ranking.
+- Curated hazard markers remain synthetic/local demo evidence. In the prototype, approximate marker positions can influence route risk estimates and ranking; they are not real incident coordinates or a production hazard feed.
+
+## Route risk engine
+
+The standalone risk engine and its integration contract are documented in [frontend/riskEngine/INTEGRATION.md](frontend/riskEngine/INTEGRATION.md). Synthetic regression fixtures are isolated in `frontend/riskEngine/fixtures/` and are test-only. Run `npm run test:risk` to execute the engine tests.
+
+## Hazard module
+
+`frontend/hazards` is the canonical local model and validation/service layer for demo and community-submitted hazards. Its in-memory store is per-tab, non-persistent, and not shared between users. Located Guwahati records are adapted into the route-risk engine; coordinates marked approximate remain evidence inputs, not authoritative incident locations. The separate GDELT feed is displayed as unverified external context and does not affect route ranking. Read [frontend/hazards/README.md](frontend/hazards/README.md) for the data model, grid semantics, API, and limitations.
+
+Run the module tests with `npm run test:hazards`.
 
 The public Nominatim service is queried only after the user initiates a search. Requests are cached and serialized to at most one per second. It is a shared service with usage limits and is not intended for high-volume or autocomplete use. Route duration comes from OSRM and is not guaranteed to reflect live traffic.
 
 The map uses Esri street tiles; review the tile provider's terms and quotas before production use. This prototype is not for emergency navigation.
 
+## Hazard ingestion prototype
+
+`services/hazard-ingestion` is a server-side library for discovering road-incident news with GDELT DOC 2.0, validating and normalizing reports, and deduplicating results. GDELT is a news index, not an official traffic feed. Imported reports are always unverified evidence; the service never invents coordinates, scores routes, or stores data.
+
+The local Reports page fetches external evidence through the Node API. Text-only or ambiguous locations are not plotted, and imported reports do not affect OSRM route recommendations. Reports are not persisted or verified by this prototype.
+
+GitHub Pages hosts only the static frontend and cannot run this Node API. Deploy the API separately and configure a production API URL/proxy before enabling external evidence there.
+
+Run the mocked unit tests and typecheck:
+
+```bash
+npm run test:ingest
+npm run typecheck:ingest
+```
+
+An opt-in live GDELT request is available for local smoke testing only. It makes one bounded request for at most five records and is not run in CI:
+
+```bash
+npm run smoke:gdelt
+```
+
 ## Run locally
+
+Start the hazard API in one terminal:
 
 ```bash
 npm install
+npm run dev:api
+```
+
+Start the frontend in a second terminal:
+
+```bash
 npm run dev
 ```
 
 Then open `http://localhost:3000`.
+
+## Frontend organization
+
+- `frontend/App.tsx` — app composition and page-level state.
+- `frontend/components/` — reusable UI and map components.
+- `frontend/data/` — clearly labelled local demo data.
+- `frontend/services/` — routing and risk-assessment adapters.
+- `frontend/types/` — app-domain TypeScript interfaces.
+- `frontend/utils/` — formatting and coordinate helpers.
+- `frontend/riskEngine/` — standalone scoring, comparison, tests, and integration contract.
 
 To verify a production build:
 
