@@ -6,11 +6,14 @@ A functional demo of an evidence-aware navigation planner for the small route fr
 
 - Three selectable route alternatives with distance, ETA, lighting, risk estimate, and evidence coverage.
 - A deterministic client-side route-risk engine that recalculates when hazard reports are added.
+- An interactive Leaflet map with public ArcGIS street tiles, route polylines, hazard markers, popups, and grid-cell overlays.
 - Interactive map controls, route overlays, evidence markers, spatial grid cells, and hazard detail inspection.
 - A report-a-hazard flow that immediately updates the active route assessment.
 - Demo navigation guidance, recent reports, and a methodology view explaining the score inputs.
 
 The map geometry and infrastructure signals are curated demo data for this pilot route. Risk values are experimental estimates and are not emergency or guaranteed-safety guidance.
+
+The map displays Esri street tiles with OpenStreetMap attribution for the independent demo; production deployments should review the selected tile provider's usage terms and quotas.
 
 ## Run locally
 

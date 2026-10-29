@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowDownUp,
@@ -35,6 +35,9 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
+import { CircleMarker, MapContainer, Popup, Polyline, Rectangle, TileLayer, useMap } from 'react-leaflet';
+import type { LatLngExpression } from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import './styles.css';
 
 type Point = { x: number; y: number };
@@ -79,6 +82,26 @@ type Route = {
 
 const origin = { name: 'Guwahati Railway Station', point: { x: 12, y: 51 } };
 const destination = { name: 'Assam Downtown University', point: { x: 86, y: 17 } };
+const guwahatiCenter: LatLngExpression = [26.158, 91.805];
+
+function pointToLatLng(point: Point): [number, number] {
+  return [26.205 - (point.y / 70) * 0.105, 91.73 + (point.x / 100) * 0.16];
+}
+
+function cellBounds(cell: { x: number; y: number }): LatLngExpression[] {
+  return [pointToLatLng({ x: cell.x, y: cell.y + 14 }), pointToLatLng({ x: cell.x + 20, y: cell.y })];
+}
+
+function LeafletViewport({ mapZoom, recenterKey, activePoints }: { mapZoom: number; recenterKey: number; activePoints: Point[] }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setZoom(Math.round(13 + (mapZoom - 1) * 5), { animate: true });
+  }, [map, mapZoom]);
+  useEffect(() => {
+    map.fitBounds(activePoints.map(pointToLatLng), { padding: [28, 28], animate: true });
+  }, [map, recenterKey, activePoints]);
+  return null;
+}
 const gridCells = Array.from({ length: 20 }, (_, index) => ({
   id: `G-${String(index + 1).padStart(2, '0')}`,
   x: (index % 5) * 20,
@@ -225,6 +248,7 @@ function App() {
   const [navStep, setNavStep] = useState(0);
   const [toast, setToast] = useState('');
   const [mapZoom, setMapZoom] = useState(1);
+  const [mapRecenterKey, setMapRecenterKey] = useState(0);
   const [mapLayers, setMapLayers] = useState({ route: true, risk: true, evidence: true });
   const [showGrid, setShowGrid] = useState(true);
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -234,10 +258,6 @@ function App() {
   const activeAssessment = scoredRoutes.find((item) => item.route.id === activeRoute.id)?.assessment ?? scoreRoute(activeRoute, hazards, filters);
   const selectedHazard = hazards.find((hazard) => hazard.id === selectedHazardId) ?? null;
   const routeHazards = hazards.filter((hazard) => hazard.routes.includes(activeRoute.id));
-  const renderedGridCells = showGrid ? gridCells.map((cell) => {
-    const cellHazards = hazards.filter((hazard) => hazard.point.x >= cell.x && hazard.point.x < cell.x + 20 && hazard.point.y >= cell.y && hazard.point.y < cell.y + 14);
-    return <g key={cell.id} className="grid-overlay"><rect x={cell.x} y={cell.y} width="20" height="14" fill={cellHazards.length ? '#f59e0b' : 'transparent'} opacity={cellHazards.length ? '.08' : '.02'} /><text x={cell.x + 1.2} y={cell.y + 2.5}>{cell.id}{cellHazards.length ? ` · ${cellHazards.length}` : ''}</text></g>;
-  }) : null;
   const navSteps = [
     `Exit Guwahati Railway Station toward Paltan Bazaar`,
     `Continue via ${activeRoute.shortName} for 4.2 km`,
@@ -394,26 +414,21 @@ function App() {
             </aside>
 
             <section className="map-stage">
-              <div className="map-toolbar"><div className="map-label"><span className="map-label-icon"><MapPin size={15} /></span><span><strong>Guwahati pilot area</strong><small>Railway Station → ADTU · map view</small></span></div><div className="map-actions"><button className="map-control" onClick={() => setMapZoom((value) => Math.min(1.25, value + 0.1))}><ZoomIn size={16} /></button><button className="map-control" onClick={() => setMapZoom((value) => Math.max(0.85, value - 0.1))}><ZoomOut size={16} /></button><button className="map-control" onClick={() => notify('Map centered on the active route.')}><Crosshair size={16} /></button><button className={`map-control ${showGrid ? 'active-control' : ''}`} onClick={() => setShowGrid((value) => !value)} title="Toggle spatial grid"><Layers3 size={16} /></button><button className="map-control" onClick={() => setMapLayers((current) => ({ ...current, evidence: !current.evidence }))} title="Toggle evidence markers"><AlertTriangle size={15} /></button></div></div>
-              <div className="map-canvas-wrap">
-                <svg className="route-map" viewBox="0 0 100 70" role="img" aria-label="Stylized Guwahati route map" style={{ transform: `scale(${mapZoom})` }}>
-                  <defs><pattern id="minorGrid" width="4" height="4" patternUnits="userSpaceOnUse"><path d="M 4 0 L 0 0 0 4" fill="none" stroke="#dbe5dc" strokeWidth="0.12" /></pattern><filter id="softShadow"><feDropShadow dx="0" dy="0.5" stdDeviation="0.6" floodOpacity="0.2" /></filter></defs>
-                  <rect width="100" height="70" fill="#eef4ea" /><rect width="100" height="70" fill="url(#minorGrid)" />
-                  {renderedGridCells}
-                  <path d="M0 9 C17 13 28 10 38 15 C51 22 63 14 73 10 C83 7 91 9 100 14 L100 0 L0 0 Z" fill="#e1ecdb" />
-                  <path d="M3 65 C20 56 30 60 43 65 C57 70 76 61 100 65 L100 70 L0 70 Z" fill="#d9e9da" />
-                  <path d="M0 57 C24 47 35 52 47 41 C61 27 76 34 100 20" fill="none" stroke="#c4d7bd" strokeWidth="3.8" opacity="0.8" />
-                  <path d="M0 57 C24 47 35 52 47 41 C61 27 76 34 100 20" fill="none" stroke="#f7faf4" strokeWidth="2.2" opacity="0.9" />
-                  <g className="road-lines">
-                    <path d="M1 13 L98 56" /><path d="M3 29 L95 4" /><path d="M8 68 L77 2" /><path d="M23 0 L31 70" /><path d="M44 0 L51 70" /><path d="M69 0 L60 70" /><path d="M87 4 L79 68" /><path d="M0 42 L100 42" /><path d="M0 25 L100 25" /><path d="M14 0 L94 70" />
-                  </g>
-                  <g className="road-labels"><text x="14" y="57">RAILWAY COLONY</text><text x="41" y="29">PANBAZAR</text><text x="67" y="16">SIX MILE</text><text x="71" y="49">CHANDMARI</text><text x="23" y="22">BHARALUMUKH</text></g>
-                  {mapLayers.route && routes.map((route) => { const isActive = route.id === activeRouteId; const points = route.points.map((point) => `${point.x},${point.y}`).join(' '); return <polyline key={route.id} points={points} fill="none" stroke={isActive ? route.color : '#ffffff'} strokeWidth={isActive ? 1.65 : 1.1} strokeLinecap="round" strokeLinejoin="round" opacity={isActive ? 1 : 0.72} className="route-line" onClick={() => setActiveRouteId(route.id)} />; })}
-                  {mapLayers.risk && activeRoute.points.slice(1, -1).map((point, index) => <circle key={`risk-${index}`} cx={point.x} cy={point.y} r={index === 1 ? 2.2 : 1.4} fill={index === 1 ? '#f59e0b' : '#ffffff'} stroke={index === 1 ? '#b45309' : '#64748b'} strokeWidth="0.4" opacity={0.9} />)}
-                  <g className="map-marker origin-marker" onClick={() => notify(origin.name)}><circle cx={origin.point.x} cy={origin.point.y} r="3.1" fill="#ffffff" stroke="#15803d" strokeWidth="0.65" filter="url(#softShadow)" /><circle cx={origin.point.x} cy={origin.point.y} r="1.2" fill="#15803d" /><text x={origin.point.x + 3} y={origin.point.y - 3}>RAILWAY STATION</text></g>
-                  <g className="map-marker destination-marker" onClick={() => notify(destination.name)}><path d={`M${destination.point.x} ${destination.point.y + 3} L${destination.point.x - 2.2} ${destination.point.y - 2} L${destination.point.x + 2.2} ${destination.point.y - 2} Z`} fill="#dc2626" stroke="#ffffff" strokeWidth="0.45" /><circle cx={destination.point.x} cy={destination.point.y - 0.6} r="0.7" fill="#ffffff" /><text x={destination.point.x - 25} y={destination.point.y - 5}>ASSAM DOWNTOWN UNIVERSITY</text></g>
-                  {mapLayers.evidence && hazards.map((hazard) => <g key={hazard.id} className="hazard-marker" onClick={() => setSelectedHazardId(hazard.id)}><circle cx={hazard.point.x} cy={hazard.point.y} r={selectedHazardId === hazard.id ? 2.8 : 2.2} fill={hazard.severity === 'High' ? '#dc2626' : '#d97706'} stroke="#ffffff" strokeWidth="0.7" /><path d={`M${hazard.point.x} ${hazard.point.y - 0.8} v1.7 M${hazard.point.x - 0.8} ${hazard.point.y} h1.6`} stroke="#fff" strokeWidth="0.45" /></g>)}
-                </svg>
+              <div className="map-toolbar"><div className="map-label"><span className="map-label-icon"><MapPin size={15} /></span><span><strong>Guwahati pilot area</strong><small>Railway Station → ADTU · live Leaflet map</small></span></div><div className="map-actions"><button className="map-control" onClick={() => setMapZoom((value) => Math.min(1.25, value + 0.1))}><ZoomIn size={16} /></button><button className="map-control" onClick={() => setMapZoom((value) => Math.max(0.85, value - 0.1))}><ZoomOut size={16} /></button><button className="map-control" onClick={() => { setMapRecenterKey((value) => value + 1); notify('Map centered on the active route.'); }}><Crosshair size={16} /></button><button className={`map-control ${showGrid ? 'active-control' : ''}`} onClick={() => setShowGrid((value) => !value)} title="Toggle spatial grid"><Layers3 size={16} /></button><button className="map-control" onClick={() => setMapLayers((current) => ({ ...current, evidence: !current.evidence }))} title="Toggle evidence markers"><AlertTriangle size={15} /></button></div></div>
+              <div className="map-canvas-wrap leaflet-map-wrap">
+                <MapContainer center={guwahatiCenter} zoom={13} zoomControl={false} scrollWheelZoom className="leaflet-map" aria-label="Interactive Guwahati route map">
+                  <TileLayer attribution='Tiles &copy; Esri &middot; Data &copy; OpenStreetMap contributors' url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
+                  <LeafletViewport mapZoom={mapZoom} recenterKey={mapRecenterKey} activePoints={activeRoute.points} />
+                  {showGrid && gridCells.map((cell) => {
+                    const cellHazards = hazards.filter((hazard) => hazard.point.x >= cell.x && hazard.point.x < cell.x + 20 && hazard.point.y >= cell.y && hazard.point.y < cell.y + 14);
+                    return <Rectangle key={cell.id} bounds={cellBounds(cell) as [[number, number], [number, number]]} pathOptions={{ color: cellHazards.length ? '#d97706' : '#8eaa8c', weight: 1, dashArray: '4 5', fillColor: cellHazards.length ? '#f59e0b' : '#dcebd8', fillOpacity: cellHazards.length ? 0.12 : 0.025 }}><Popup><strong>{cell.id}</strong><br />{cellHazards.length ? `${cellHazards.length} evidence item${cellHazards.length === 1 ? '' : 's'} in this grid cell.` : 'No current evidence item in this grid cell.'}</Popup></Rectangle>;
+                  })}
+                  {mapLayers.route && routes.map((route) => { const isActive = route.id === activeRouteId; return <Polyline key={route.id} positions={route.points.map(pointToLatLng)} pathOptions={{ color: isActive ? route.color : '#ffffff', weight: isActive ? 6 : 4, opacity: isActive ? 0.96 : 0.72 }} eventHandlers={{ click: () => setActiveRouteId(route.id) }} />; })}
+                  {mapLayers.risk && activeRoute.points.slice(1, -1).map((point, index) => <CircleMarker key={`risk-${index}`} center={pointToLatLng(point)} radius={index === 1 ? 8 : 5} pathOptions={{ color: index === 1 ? '#b45309' : '#64748b', fillColor: index === 1 ? '#f59e0b' : '#ffffff', fillOpacity: 0.95, weight: 2 }} />)}
+                  <CircleMarker center={pointToLatLng(origin.point)} radius={11} pathOptions={{ color: '#15803d', fillColor: '#ffffff', fillOpacity: 1, weight: 4 }} eventHandlers={{ click: () => notify(origin.name) }}><Popup><strong>Origin</strong><br />{origin.name}</Popup></CircleMarker>
+                  <CircleMarker center={pointToLatLng(destination.point)} radius={10} pathOptions={{ color: '#dc2626', fillColor: '#ffffff', fillOpacity: 1, weight: 4 }} eventHandlers={{ click: () => notify(destination.name) }}><Popup><strong>Destination</strong><br />{destination.name}</Popup></CircleMarker>
+                  {mapLayers.evidence && hazards.map((hazard) => <CircleMarker key={hazard.id} center={pointToLatLng(hazard.point)} radius={selectedHazardId === hazard.id ? 10 : 8} pathOptions={{ color: '#ffffff', fillColor: hazard.severity === 'High' ? '#dc2626' : '#d97706', fillOpacity: 1, weight: 2 }} eventHandlers={{ click: () => setSelectedHazardId(hazard.id) }}><Popup><strong>{hazard.title}</strong><br />{hazard.location}<br /><button className="map-popup-button" onClick={() => setSelectedHazardId(hazard.id)}>Inspect evidence</button></Popup></CircleMarker>)}
+                </MapContainer>
                 <div className="map-legend"><div><span className="legend-line green-line" /> active route</div><div><span className="legend-line amber-line" /> evidence item</div><div><span className="legend-dot red-dot" /> destination</div><div><span className="legend-cell" /> spatial grid cell</div></div>
                 <div className="map-scale">500 m</div>
                 <div className="map-attribution">Demo geometry · OpenStreetMap-style context · not for emergency routing</div>
