@@ -254,13 +254,25 @@ function App() {
     }
     setInputError('');
 
-    if (searchDebounceTimer.current) {
-      window.clearTimeout(searchDebounceTimer.current);
-    }
+    // Instant local preset matching (no API call); Nominatim search
+    // only fires on Enter key or Search button to respect rate limits.
     if (value.trim().length >= 2) {
-      searchDebounceTimer.current = window.setTimeout(() => {
-        void searchLocationWith(field, value);
-      }, 300);
+      const lower = value.trim().toLowerCase();
+      const words = lower.split(/\s+/).filter((w: string) => w.length > 2);
+      const adtuAlias = lower.includes('downtown') || lower.includes('down town') || lower.includes('adtu');
+      const matched = GUWAHATI_PRESETS
+        .map((preset, order) => {
+          if (adtuAlias) return preset.id === 'preset-adtu' ? { preset, score: 1, order } : null;
+          const pn = preset.displayName.toLowerCase();
+          if (pn.includes(lower)) return { preset, score: 1000 + lower.length, order };
+          const score = words.reduce((t: number, w: string) => (pn.includes(w) ? t + w.length : t), 0);
+          return score > 0 ? { preset, score, order } : null;
+        })
+        .filter((m): m is { preset: typeof GUWAHATI_PRESETS[number]; score: number; order: number } => m !== null)
+        .sort((a, b) => b.score - a.score || a.order - b.order)
+        .map(m => m.preset);
+      if (field === 'origin') setOriginResults(matched);
+      else setDestinationResults(matched);
     } else {
       if (field === 'origin') setOriginResults([]);
       else setDestinationResults([]);
