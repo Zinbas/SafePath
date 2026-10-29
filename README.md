@@ -14,6 +14,12 @@ A hackathon prototype for hazard-aware route recommendations. The frontend uses 
 
 The standalone risk engine and its integration contract are documented in [frontend/riskEngine/INTEGRATION.md](frontend/riskEngine/INTEGRATION.md). Synthetic regression fixtures are isolated in `frontend/riskEngine/fixtures/` and are test-only. Run `npm run test:risk` to execute the engine tests.
 
+## Hazard module
+
+`frontend/hazards` is the canonical local model and validation/service layer for demo and community-submitted hazards. Its in-memory store is per-tab, non-persistent, and not shared between users. Located Guwahati records are adapted into the route-risk engine; coordinates marked approximate remain evidence inputs, not authoritative incident locations. The separate GDELT feed is displayed as unverified external context and does not affect route ranking. Read [frontend/hazards/README.md](frontend/hazards/README.md) for the data model, grid semantics, API, and limitations.
+
+Run the module tests with `npm run test:hazards`.
+
 The public Nominatim service is queried only after the user initiates a search. Requests are cached and serialized to at most one per second. It is a shared service with usage limits and is not intended for high-volume or autocomplete use. Route duration comes from OSRM and is not guaranteed to reflect live traffic.
 
 The map uses Esri street tiles; review the tile provider's terms and quotas before production use. This prototype is not for emergency navigation.
