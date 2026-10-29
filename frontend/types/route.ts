@@ -1,3 +1,5 @@
+import type { RouteStep } from '../services/routing';
+
 export interface Route {
   id: string;
   name: string;
@@ -8,4 +10,5 @@ export interface Route {
   distanceMeters: number;
   durationSeconds: number;
   color: string;
+  steps?: RouteStep[];
 }

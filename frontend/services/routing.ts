@@ -5,11 +5,21 @@ export type LocationCandidate = {
   latitude: number;
 };
 
+export type RouteStep = {
+  instruction: string;
+  name: string;
+  distanceMeters: number;
+  durationSeconds: number;
+  maneuverType: string;
+  maneuverModifier: string;
+};
+
 export type RoadRoute = {
   id: string;
   distanceMeters: number;
   durationSeconds: number;
   coordinates: [number, number][];
+  steps?: RouteStep[];
 };
 
 export type RouteSearchResult = {
@@ -206,7 +216,7 @@ export async function fetchRoadRoutes(
   const coordinates = `${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`;
   const parameters = new URLSearchParams({
     alternatives: 'true',
-    steps: 'false',
+    steps: 'true',
     geometries: 'geojson',
     overview: 'full',
   });
@@ -279,11 +289,45 @@ export async function fetchRoadRoutes(
       throw new Error('Road routing returned an incomplete route. Please try again.');
     }
 
+    // Parse real OSRM turn-by-turn steps from legs
+    const rawLegs = Array.isArray(route.legs) ? route.legs : [];
+    const parsedSteps: RouteStep[] = rawLegs.flatMap((leg: unknown) => {
+      if (!isRecord(leg) || !Array.isArray(leg.steps)) return [];
+      return leg.steps.flatMap((step: unknown): RouteStep[] => {
+        if (!isRecord(step)) return [];
+        const maneuver = isRecord(step.maneuver) ? step.maneuver : {};
+        const mType = typeof maneuver.type === 'string' ? maneuver.type : '';
+        const mMod = typeof maneuver.modifier === 'string' ? maneuver.modifier : '';
+        const name = typeof step.name === 'string' ? step.name : '';
+        const dist = typeof step.distance === 'number' ? step.distance : 0;
+        const dur = typeof step.duration === 'number' ? step.duration : 0;
+        let instruction = '';
+        if (mType === 'depart') instruction = name ? `Head on ${name}` : 'Depart';
+        else if (mType === 'arrive') instruction = 'Arrive at destination';
+        else if (mType === 'turn' || mType === 'new name' || mType === 'end of road') {
+          const dir = mMod ? mMod.replace(/ /g, ' ') : 'ahead';
+          instruction = name ? `Turn ${dir} onto ${name}` : `Turn ${dir}`;
+        } else if (mType === 'merge') instruction = name ? `Merge onto ${name}` : 'Merge';
+        else if (mType === 'fork') {
+          const dir = mMod || 'ahead';
+          instruction = name ? `Keep ${dir} onto ${name}` : `Keep ${dir}`;
+        } else if (mType === 'roundabout' || mType === 'rotary') {
+          instruction = name ? `Take the roundabout to ${name}` : 'Take the roundabout';
+        } else if (mType === 'continue') {
+          instruction = name ? `Continue on ${name}` : 'Continue';
+        } else {
+          instruction = name ? `Continue on ${name}` : mType || 'Continue';
+        }
+        return [{ instruction, name, distanceMeters: dist, durationSeconds: dur, maneuverType: mType, maneuverModifier: mMod }];
+      });
+    });
+
     return {
       id: `osrm-${index}`,
       distanceMeters,
       durationSeconds,
       coordinates: routeCoordinates,
+      steps: parsedSteps.length > 0 ? parsedSteps : undefined,
     };
   });
 

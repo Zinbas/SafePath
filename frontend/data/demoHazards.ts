@@ -1,6 +1,14 @@
 import type { Hazard } from '../types/hazard';
 
 /**
+ * Fixed reference time for demo hazard timestamps.
+ * Using a constant instead of Date.now() ensures reproducible risk scores
+ * and makes it obvious that demo data is static, not live.
+ */
+export const DEMO_REFERENCE_TIME = '2026-10-29T12:00:00.000Z';
+const demoBaseMs = new Date(DEMO_REFERENCE_TIME).getTime();
+
+/**
  * Synthetic local-only UI data; never treat these approximate pins as real reports.
  * Demo map points are converted with `demoPointToLatLng` and deliberately sit inside the
  * 50 m corridor of the demo Guwahati route so the prototype risk score can react to them.
@@ -13,11 +21,11 @@ export const initialDemoHazards: Hazard[] = [
     location: 'AT Road, near Bharalumukh junction',
     point: { x: 15.7, y: 13.3 },
     severity: 'Medium',
-    verification: 'Verified',
+    verification: 'Needs review',
     freshness: '18 min ago',
-    source: 'GMC field notice · Ward 17',
+    source: 'Synthetic demo report',
     summary: 'A temporary pedestrian diversion is active beside an uncovered culvert. Vehicle lanes remain open.',
-    reportedAtMs: Date.now() - 18 * 60_000,
+    reportedAtMs: demoBaseMs - 18 * 60_000,
   },
   {
     id: 'h-lights',
@@ -30,7 +38,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '46 min ago',
     source: 'Synthetic community demo report',
     summary: 'Several streetlights are reported out along a short road segment. This is sample data for the demo, not a verified live report.',
-    reportedAtMs: Date.now() - 46 * 60_000,
+    reportedAtMs: demoBaseMs - 46 * 60_000,
   },
   {
     id: 'h-potholes',
@@ -43,7 +51,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '32 min ago',
     source: 'Synthetic resident report',
     summary: 'A sample report describes multiple potholes in the left lane. The location and condition are illustrative only and require field verification.',
-    reportedAtMs: Date.now() - 32 * 60_000,
+    reportedAtMs: demoBaseMs - 32 * 60_000,
   },
   {
     id: 'h-drainage',
@@ -56,7 +64,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '1 hr ago',
     source: 'Synthetic municipal notice',
     summary: 'A sample notice indicates temporary roadside work may narrow one lane. Treat this as placeholder demo content, not a current closure.',
-    reportedAtMs: Date.now() - 60 * 60_000,
+    reportedAtMs: demoBaseMs - 60 * 60_000,
   },
   {
     id: 'h-waterlogging',
@@ -69,7 +77,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '24 min ago',
     source: 'Synthetic weather-impact demo report',
     summary: 'Illustrative report of standing water on a low-lying connector. Not a live observation; check local authorities before travel.',
-    reportedAtMs: Date.now() - 24 * 60_000,
+    reportedAtMs: demoBaseMs - 24 * 60_000,
   },
   {
     id: 'h-collision',
@@ -82,7 +90,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '12 min ago',
     source: 'Synthetic community demo report',
     summary: 'Illustrative minor collision report with a possible short delay. This sample does not confirm an active incident.',
-    reportedAtMs: Date.now() - 12 * 60_000,
+    reportedAtMs: demoBaseMs - 12 * 60_000,
   },
   {
     id: 'h-market',
@@ -95,7 +103,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '1 hr ago',
     source: 'Synthetic demo report',
     summary: 'An illustrative 8–12 minute delay near the flyover approach. This is sample data, not a current traffic observation.',
-    reportedAtMs: Date.now() - 60 * 60_000,
+    reportedAtMs: demoBaseMs - 60 * 60_000,
   },
   {
     id: 'h-quick-station',
@@ -108,7 +116,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '28 min ago',
     source: 'Synthetic demo report',
     summary: 'Illustrative sample report of a pothole near the station approach. Not a real or verified report.',
-    reportedAtMs: Date.now() - 28 * 60_000,
+    reportedAtMs: demoBaseMs - 28 * 60_000,
   },
   {
     id: 'h-quick-adtu',
@@ -121,7 +129,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '41 min ago',
     source: 'Synthetic demo report',
     summary: 'Illustrative lane-narrowing work beside the university entrance. The sample location and conditions are not verified.',
-    reportedAtMs: Date.now() - 41 * 60_000,
+    reportedAtMs: demoBaseMs - 41 * 60_000,
   },
   {
     id: 'h-quick-airport',
@@ -134,7 +142,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '35 min ago',
     source: 'Synthetic demo report',
     summary: 'Illustrative report of low lighting on an airport approach segment. This is sample data, not a live observation.',
-    reportedAtMs: Date.now() - 35 * 60_000,
+    reportedAtMs: demoBaseMs - 35 * 60_000,
   },
   {
     id: 'h-quick-kamakhya',
@@ -147,7 +155,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '52 min ago',
     source: 'Synthetic demo report',
     summary: 'Illustrative sample report of a temporary obstruction on the hill access road. Verify locally before relying on it.',
-    reportedAtMs: Date.now() - 52 * 60_000,
+    reportedAtMs: demoBaseMs - 52 * 60_000,
   },
   {
     id: 'h-quick-iit',
@@ -160,7 +168,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '19 min ago',
     source: 'Synthetic demo report',
     summary: 'Illustrative report of a short slowdown on the campus approach. It does not confirm an active incident.',
-    reportedAtMs: Date.now() - 19 * 60_000,
+    reportedAtMs: demoBaseMs - 19 * 60_000,
   },
   {
     id: 'h-quick-zoo',
@@ -173,7 +181,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '26 min ago',
     source: 'Synthetic demo report',
     summary: 'Illustrative report of uneven pavement near the junction. Sample content only; not a verified street condition.',
-    reportedAtMs: Date.now() - 26 * 60_000,
+    reportedAtMs: demoBaseMs - 26 * 60_000,
   },
   {
     id: 'h-quick-khanapara',
@@ -186,7 +194,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '33 min ago',
     source: 'Synthetic demo report',
     summary: 'Illustrative post-rain waterlogging report near the transit hub. Not a live weather or road observation.',
-    reportedAtMs: Date.now() - 33 * 60_000,
+    reportedAtMs: demoBaseMs - 33 * 60_000,
   },
   {
     id: 'h-quick-paltan',
@@ -199,7 +207,7 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '47 min ago',
     source: 'Synthetic demo report',
     summary: 'Illustrative report of a streetlight outage near the station. Not a real or verified report.',
-    reportedAtMs: Date.now() - 47 * 60_000,
+    reportedAtMs: demoBaseMs - 47 * 60_000,
   },
   {
     id: 'h-quick-dispur',
@@ -212,6 +220,19 @@ export const initialDemoHazards: Hazard[] = [
     freshness: '22 min ago',
     source: 'Synthetic demo report',
     summary: 'Illustrative sample of roadside work that may narrow a lane near the complex. This is not a current closure notice.',
-    reportedAtMs: Date.now() - 22 * 60_000,
+    reportedAtMs: demoBaseMs - 22 * 60_000,
+  },
+  {
+    id: 'h-stale-demo',
+    type: 'Road obstruction',
+    title: 'Stale demo report (>48 h old)',
+    location: 'AT Road, near Fancy Bazaar',
+    point: { x: 17.0, y: 14.0 },
+    severity: 'Low',
+    verification: 'Needs review',
+    freshness: '3 days ago',
+    source: 'Synthetic demo report',
+    summary: 'Deliberately stale sample report used to verify that the risk engine correctly decays old data. Not a current observation.',
+    reportedAtMs: demoBaseMs - 72 * 60 * 60_000,
   },
 ];

@@ -47,62 +47,28 @@ export function NavigationMode({
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Generate realistic navigation steps based on route distance and hazards
+  // Use real OSRM steps when available; show unavailable banner otherwise
   const steps = useMemo<NavStep[]>(() => {
-    const totalDist = route.distanceMeters;
-    const totalDur = route.durationSeconds;
+    const osrmSteps = route.steps;
+    if (!osrmSteps || osrmSteps.length === 0) return [];
 
-    const nearby = riskResult?.nearbyHazards ?? [];
-    const firstHazard = nearby[0];
-    const secondHazard = nearby[1];
+    return osrmSteps.map((step, idx) => {
+      let icon: NavStep['icon'] = 'straight';
+      if (step.maneuverType === 'depart') icon = 'start';
+      else if (step.maneuverType === 'arrive') icon = 'destination';
+      else if (step.maneuverModifier?.includes('left')) icon = 'left';
+      else if (step.maneuverModifier?.includes('right')) icon = 'right';
 
-    const generatedSteps: NavStep[] = [
-      {
-        id: 1,
-        instruction: `Start from ${originName.split(',')[0]}`,
-        subtext: 'Head toward the main exit road',
-        distanceMeters: Math.round(totalDist * 0.1),
-        durationSeconds: Math.round(totalDur * 0.1),
-        icon: 'start',
-      },
-      {
-        id: 2,
-        instruction: 'Turn right onto the main arterial corridor',
-        subtext: 'Merge with traffic flow and maintain speed',
-        distanceMeters: Math.round(totalDist * 0.25),
-        durationSeconds: Math.round(totalDur * 0.25),
-        icon: 'right',
-        warning: firstHazard ? `Caution: ${firstHazard.type.replace(/_/g, ' ')} reported within ${Math.round(firstHazard.distanceToRouteM)} m of this leg` : undefined,
-      },
-      {
-        id: 3,
-        instruction: 'Continue straight through central transit junction',
-        subtext: 'Follow signs toward downtown avenue',
-        distanceMeters: Math.round(totalDist * 0.35),
-        durationSeconds: Math.round(totalDur * 0.35),
-        icon: 'straight',
-        warning: secondHazard ? `Hazard alert: ${secondHazard.type.replace(/_/g, ' ')} (${secondHazard.verification})` : undefined,
-      },
-      {
-        id: 4,
-        instruction: 'Turn left onto the destination access avenue',
-        subtext: 'Prepare to slow down for campus gates',
-        distanceMeters: Math.round(totalDist * 0.2),
-        durationSeconds: Math.round(totalDur * 0.2),
-        icon: 'left',
-      },
-      {
-        id: 5,
-        instruction: `Arrive at ${destinationName.split(',')[0]}`,
-        subtext: 'Destination is on your left',
-        distanceMeters: Math.round(totalDist * 0.1),
-        durationSeconds: Math.round(totalDur * 0.1),
-        icon: 'destination',
-      },
-    ];
-
-    return generatedSteps;
-  }, [route, riskResult, originName, destinationName]);
+      return {
+        id: idx + 1,
+        instruction: step.instruction,
+        subtext: step.name || '',
+        distanceMeters: step.distanceMeters,
+        durationSeconds: step.durationSeconds,
+        icon,
+      };
+    });
+  }, [route.steps]);
 
   // Auto-play simulation timer
   useEffect(() => {
@@ -121,6 +87,27 @@ export function NavigationMode({
 
     return () => clearInterval(interval);
   }, [isPlaying, steps.length]);
+
+  // No OSRM steps available — honest unavailable banner
+  if (steps.length === 0) {
+    return (
+      <div className="navigation-overlay" role="dialog" aria-modal="true" aria-label="Navigation unavailable">
+        <div className="navigation-card">
+          <div className="navigation-content" style={{ padding: '32px 24px', textAlign: 'center' }}>
+            <AlertTriangle size={32} style={{ color: 'var(--amber)', marginBottom: '12px' }} />
+            <h3 style={{ margin: '0 0 8px' }}>Turn-by-turn guidance unavailable</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: '0 0 20px' }}>
+              The routing service did not return step-by-step directions for this route.
+              You can still view the route on the map.
+            </p>
+            <button type="button" className="secondary-button" onClick={onClose}>
+              Return to map
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const currentStep = steps[currentStepIndex] ?? steps[0];
   const progressPct = Math.round(((currentStepIndex + 1) / steps.length) * 100);
@@ -175,7 +162,7 @@ export function NavigationMode({
 
         <div className="navigation-content">
           <div className="nav-progress-label">
-            <span>Step {currentStepIndex + 1} of {steps.length} · Demo guidance</span>
+            <span>Step {currentStepIndex + 1} of {steps.length} · OSRM directions</span>
             <strong>{progressPct}% completed</strong>
           </div>
           <div className="progress-track" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
@@ -291,4 +278,3 @@ export function NavigationMode({
     </div>
   );
 }
-

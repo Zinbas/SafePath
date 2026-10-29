@@ -201,6 +201,7 @@ function App() {
           distanceMeters: route.distanceMeters,
           durationSeconds: route.durationSeconds,
           color: ['#15803d', '#d97706', '#2563eb'][index % 3],
+          steps: route.steps,
         };
       });
       const localCoverage = result.waypoints.length === 2

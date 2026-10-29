@@ -17,5 +17,6 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["frontend"]
+  "include": ["frontend"],
+  "exclude": ["frontend/**/*.test.ts"]
 }
